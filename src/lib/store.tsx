@@ -24,6 +24,7 @@ import {
   DEFAULT_COLUMN_NAMES,
 } from "./types";
 import * as db from "./db";
+import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
 import { avatarColor } from "./utils";
 import { getJournalTriggers, JournalTrigger } from "./settings";
@@ -196,6 +197,36 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
     return () => {
       cancelled = true;
+    };
+  }, [userId, apply]);
+
+  // Real-time: subscribe to all table changes so every user sees updates instantly
+  useEffect(() => {
+    if (!userId) return;
+    const sb = getSupabase();
+    if (!sb) return;
+
+    // Debounce refetch to avoid flooding when many rows change at once
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefetch = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        db.fetchAll(userId).then(apply).catch(console.error);
+      }, 300);
+    };
+
+    const channel = sb
+      .channel("bulut-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "boards" }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "journal" }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_comments" }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, scheduleRefetch)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      sb.removeChannel(channel);
     };
   }, [userId, apply]);
 
