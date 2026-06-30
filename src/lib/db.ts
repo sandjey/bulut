@@ -159,11 +159,11 @@ function client() {
 export async function fetchAll(userId: string): Promise<AppData> {
   const c = client();
   const [boardsRes, tasksRes, journalRes, commentsRes, membersRes] = await Promise.all([
-    c.from("boards").select("*").eq("user_id", userId).order("position", { ascending: true }),
-    c.from("tasks").select("*").eq("user_id", userId).order("position", { ascending: true }),
-    c.from("journal").select("*").eq("user_id", userId).order("date", { ascending: false }),
-    c.from("task_comments").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
-    c.from("members").select("*").eq("user_id", userId).order("name", { ascending: true }),
+    c.from("boards").select("*").order("position", { ascending: true }),
+    c.from("tasks").select("*").order("position", { ascending: true }),
+    c.from("journal").select("*").order("date", { ascending: false }),
+    c.from("task_comments").select("*").order("created_at", { ascending: true }),
+    c.from("members").select("*").order("name", { ascending: true }),
   ]);
   if (boardsRes.error) throw boardsRes.error;
   if (tasksRes.error) throw tasksRes.error;
