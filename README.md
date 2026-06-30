@@ -1,140 +1,286 @@
-# Bulut — Менеджер задач в стиле Trello
+# Bulut — Командный менеджер задач
 
-Современное веб-приложение для управления задачами, вдохновлённое Trello / Linear / Notion.
-Данные хранятся в **PostgreSQL через Supabase**, вход — **по email**, запуск — **через Docker**.
+Современный Kanban-менеджер для команды. Next.js 14 + Supabase + TypeScript + real-time.
 
-![stack](https://img.shields.io/badge/Next.js-14-black) ![ts](https://img.shields.io/badge/TypeScript-5-blue) ![tw](https://img.shields.io/badge/Tailwind-3-38bdf8) ![supabase](https://img.shields.io/badge/Supabase-Postgres-3ecf8e) ![docker](https://img.shields.io/badge/Docker-ready-2496ed)
-
-## ✨ Возможности
-
-- **Аккаунты по email** — регистрация/вход через Supabase Auth, данные привязаны к пользователю
-- **Облачное хранение** — Postgres вместо localStorage, ничего не теряется при перезагрузке
-- **Полностью динамично** — сами создаёте и удаляете доски, колонки, задачи (никаких статичных данных)
-- **Доски** с цветовыми метками и настраиваемыми колонками
-- **Drag & drop** карточек между колонками
-- **Карточки**: название, описание, исполнитель, приоритет, дедлайн, теги; обратный отсчёт 🟢🟡🔴; быстрое редактирование
-- Отметка «выполнено» → авто-запись в **Журнал**
-- **Фильтры и поиск**, глобальный поиск `⌘K`
-- **Журнал** в Excel-виде с группировкой по **дню / неделе / месяцу / направлению**
-- **Аналитика**: графики, нагрузка по исполнителям, сводка по направлениям
-- **Экспорт в Excel** (`.xlsx`) с фильтрами
-- Тёмная / **мягкая светлая** тема, анимации, адаптив
-
-> Изоляция данных обеспечивается **Row Level Security**: каждый пользователь видит только свои записи.
+**Прод:** https://bulut-kappa.vercel.app  
+**GitHub:** https://github.com/sandjey/bulut  
+**API:** https://bulut-kappa.vercel.app/api
 
 ---
 
-## 🚀 Быстрый старт
+## Быстрый старт
 
-Нужен только аккаунт/инстанс **Supabase** (облако или локально) и Node 18.18+ или Docker.
-
-### Шаг 1. Поднять базу данных (Supabase)
-
-**Вариант A — облако (проще всего):**
-1. Создайте бесплатный проект на [supabase.com](https://supabase.com).
-2. Откройте **SQL Editor** и выполните содержимое [`supabase/schema.sql`](supabase/schema.sql)
-   (создаст таблицы `boards`, `tasks`, `journal` и политики RLS).
-3. В **Settings → API** скопируйте `Project URL` и `anon public` ключ.
-4. *(Опционально)* В **Authentication → Providers → Email** отключите «Confirm email»,
-   чтобы входить сразу без подтверждения по почте.
-
-**Вариант B — локально через Docker (Supabase CLI):**
-```bash
-npm i -g supabase            # или: brew install supabase/tap/supabase
-supabase start               # поднимет Postgres + Auth в Docker и применит миграции
-# URL  → http://localhost:54321
-# ключ → значение "anon key" из вывода команды
-```
-
-### Шаг 2. Настроить переменные окружения
+### Docker (рекомендуется)
 
 ```bash
+git clone https://github.com/sandjey/bulut.git
+cd bulut
 cp .env.example .env
-```
-Заполните `.env`:
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co   # или http://localhost:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<ваш anon public ключ>
-```
-
-### Шаг 3. Запустить
-
-**Через Docker (рекомендуется):**
-```bash
+# заполни .env своими ключами Supabase
 docker compose up --build
-# открыть http://localhost:3000
+# → http://localhost:3000
 ```
 
-**Или локально без Docker:**
+### Без Docker
+
 ```bash
 npm install
+cp .env.example .env
 npm run dev
-# открыть http://localhost:3000
 ```
-
-Зарегистрируйтесь по email — и создавайте свои доски. 🎉
 
 ---
 
-## 🐳 Docker
+## Переменные окружения
 
-- `Dockerfile` — multi-stage сборка, образ на базе `node:20-alpine` с `output: standalone` (минимальный размер).
-- `docker-compose.yml` — поднимает приложение на порту `3000`, переменные берёт из `.env`.
+| Переменная | Где взять | Назначение |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API | Supabase URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API | Публичный ключ |
+| `BULUT_API_KEY` | Любой случайный секрет | Ключ для REST API |
+| `BULUT_API_SERVICE_EMAIL` | Email сервис-аккаунта | REST API авторизация |
+| `BULUT_API_SERVICE_PASS` | Пароль сервис-аккаунта | REST API авторизация |
+
+---
+
+## База данных (Supabase SQL Editor)
+
+Применяй миграции по порядку — или сразу весь `supabase/schema.sql`:
+
+```
+supabase/migrations/20240101000000_init.sql
+supabase/migrations/20240102000000_team_workflow.sql
+supabase/migrations/20240103000000_members.sql
+supabase/migrations/20240104000000_journal_dynamic.sql
+supabase/migrations/20240105000000_task_type.sql
+supabase/migrations/20240106000000_stage_times.sql
+supabase/migrations/20240107000000_checklist_attachments.sql
+supabase/migrations/20240110000000_shared_workspace.sql
+```
+
+Включи Realtime (Supabase → Database → Replication) для таблиц:
+`boards`, `tasks`, `journal`, `task_comments`, `members`
+
+Или через SQL:
+```sql
+alter publication supabase_realtime add table public.boards;
+alter publication supabase_realtime add table public.tasks;
+alter publication supabase_realtime add table public.journal;
+alter publication supabase_realtime add table public.task_comments;
+alter publication supabase_realtime add table public.members;
+```
+
+---
+
+## Возможности
+
+| Раздел | Функции |
+|---|---|
+| **Доски** | Drag & drop колонки и карточки, цвета, прогресс |
+| **Задачи** | 10 типов (баг/фича/…), приоритет, дедлайн, теги, исполнитель |
+| **Команда** | Участники, роли, статистика нагрузки |
+| **Процесс** | Отправить на проверку → QA принимает или возвращает с комментарием |
+| **Чек-лист** | Подзадачи с прогресс-баром прямо в карточке |
+| **Вложения** | Ссылки и файлы в карточке |
+| **Журнал** | Авто-запись событий, фильтрация по доске |
+| **Отчёты** | По сотрудникам / занятость / узкие места за день/неделю/месяц |
+| **Аналитика** | Графики, прогресс по доскам, нагрузка по исполнителям |
+| **Мои задачи** | Персональный список сгруппирован по срокам |
+| **Уведомления** | Просрочка, дедлайн, возвраты QA, @упоминания |
+| **Экспорт** | Excel (задачи + журнал) |
+| **Real-time** | Все изменения видны всем пользователям без перезагрузки |
+| **REST API** | GET/POST/PATCH/DELETE с фильтрацией и пагинацией |
+
+---
+
+## REST API
+
+**Base URL:** `https://bulut-kappa.vercel.app/api`
+
+Полная документация endpoints: `GET /api`
+
+### Аутентификация
+
+```
+X-API-Key: ВАШ_КЛЮЧ                          # для внешних интеграций
+Authorization: Bearer <supabase-jwt-token>    # для своих клиентов
+```
+
+---
+
+### GET /api/boards — список досок
 
 ```bash
-docker compose up --build      # собрать и запустить
-docker compose down            # остановить
+curl https://bulut-kappa.vercel.app/api/boards \
+  -H "X-API-Key: ВАШ_КЛЮЧ"
 ```
 
-> `NEXT_PUBLIC_*` переменные встраиваются в клиентский бандл **на этапе сборки**,
-> поэтому compose передаёт их и как `build args`, и как `environment`.
+```json
+{
+  "data": [{
+    "id": "uuid", "name": "Backend", "color": "#2563eb",
+    "taskCount": 12,
+    "columns": [
+      { "id": "col1", "name": "Бэклог", "total": 5, "active": 5, "done": 0 }
+    ]
+  }],
+  "total": 3
+}
+```
 
 ---
 
-## 🧱 Стек
+### GET /api/tasks — список задач с фильтрами
 
-| Назначение     | Технология              |
-| -------------- | ----------------------- |
-| Фреймворк      | Next.js 14 (App Router) |
-| Язык           | TypeScript              |
-| Стили          | Tailwind CSS            |
-| БД + Auth      | Supabase (PostgreSQL)   |
-| Drag & drop    | @hello-pangea/dnd       |
-| Графики        | recharts                |
-| Excel          | xlsx (SheetJS)          |
-| Даты           | date-fns                |
-| Иконки         | lucide-react            |
-
-## 📁 Структура
-
-```
-├── Dockerfile / docker-compose.yml / .dockerignore
-├── .env.example
-├── supabase/
-│   ├── schema.sql                 # схема + RLS (для облака)
-│   └── migrations/                # та же схема как миграция (для supabase CLI)
-└── src/
-    ├── app/                       # страницы (App Router)
-    ├── components/                # UI + AuthGate / LoginScreen
-    └── lib/
-        ├── supabase.ts            # браузерный клиент Supabase
-        ├── auth.tsx               # провайдер аутентификации (email)
-        ├── db.ts                  # доступ к Postgres (CRUD)
-        ├── store.tsx              # стор с оптимистичными обновлениями
-        ├── types.ts / date.ts / filters.ts / export.ts / utils.ts
+```bash
+curl "https://bulut-kappa.vercel.app/api/tasks?status=active&priority=high" \
+  -H "X-API-Key: ВАШ_КЛЮЧ"
 ```
 
-## 💾 Модель данных (PostgreSQL)
+| Параметр | Значения | Описание |
+|---|---|---|
+| `boardId` | UUID | Фильтр по доске |
+| `columnId` | string | Фильтр по колонке |
+| `assignee` | string | Исполнитель (без учёта регистра) |
+| `status` | `active` / `done` | Статус |
+| `priority` | `low` / `medium` / `high` | Приоритет |
+| `type` | `task` / `bug` / `feature` / `newfeature` / `improvement` / `refactor` / `docs` / `test` / `design` / `research` | Тип |
+| `search` | string | Поиск в названии и описании |
+| `dueAfter` | YYYY-MM-DD | Дедлайн от |
+| `dueBefore` | YYYY-MM-DD | Дедлайн до |
+| `overdue` | `true` | Только просроченные |
+| `hasAssignee` | `true` / `false` | Есть/нет исполнитель |
+| `sort` | `created_at` / `due_date` / `position` / `title` | Сортировка |
+| `order` | `asc` / `desc` | Направление |
+| `page` | number | Страница (по умолч. 1) |
+| `limit` | number | На странице (по умолч. 50, макс. 200) |
 
-```sql
-boards (id, user_id, name, color, columns jsonb, position, created_at)
-tasks  (id, user_id, board_id, column_id, title, description, assignee,
-        priority, due_date, tags text[], status, position, created_at, completed_at)
-journal(id, user_id, task_id, date, board_name, task_title, assignee, notes, created_at)
+```json
+{
+  "data": [{ "id": "...", "title": "...", "assignee": "Иван", "priority": "high", ... }],
+  "meta": { "total": 45, "page": 1, "limit": 20, "pages": 3, "hasMore": true }
+}
 ```
-
-Все таблицы защищены RLS-политикой `auth.uid() = user_id`.
 
 ---
 
-Сделано с ❤️ — продакшн-уровень, облачное хранение, запуск одной командой.
+### POST /api/tasks — создать задачу
+
+```bash
+curl -X POST https://bulut-kappa.vercel.app/api/tasks \
+  -H "X-API-Key: ВАШ_КЛЮЧ" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Исправить баг авторизации",
+    "boardId": "BOARD_UUID",
+    "columnId": "COLUMN_ID",
+    "assignee": "Иван",
+    "priority": "high",
+    "type": "bug",
+    "dueDate": "2026-07-15",
+    "tags": ["auth", "urgent"],
+    "checklist": [
+      { "text": "Воспроизвести баг" },
+      { "text": "Написать тест" },
+      { "text": "Исправить и задеплоить" }
+    ],
+    "attachments": [
+      { "name": "Скриншот ошибки", "url": "https://example.com/bug.png" }
+    ]
+  }'
+```
+
+| Поле | Тип | Обяз. |
+|---|---|---|
+| `title` | string | ✅ |
+| `boardId` | UUID | ✅ |
+| `columnId` | string | ✅ |
+| `description` | string | — |
+| `assignee` | string | — |
+| `priority` | `low` / `medium` / `high` | — |
+| `type` | `task` / `bug` / `feature` / ... | — |
+| `dueDate` | YYYY-MM-DD | — |
+| `tags` | string[] | — |
+| `checklist` | `{ text, done? }[]` | — |
+| `attachments` | `{ name, url }[]` | — |
+
+Ответ: `201 Created` + созданная задача.
+
+---
+
+### GET /api/tasks/:id — задача с комментариями
+
+```bash
+curl https://bulut-kappa.vercel.app/api/tasks/TASK_UUID \
+  -H "X-API-Key: ВАШ_КЛЮЧ"
+```
+
+---
+
+### PATCH /api/tasks/:id — обновить задачу
+
+```bash
+curl -X PATCH https://bulut-kappa.vercel.app/api/tasks/TASK_UUID \
+  -H "X-API-Key: ВАШ_КЛЮЧ" \
+  -H "Content-Type: application/json" \
+  -d '{ "status": "done", "assignee": "Мария", "priority": "low" }'
+```
+
+---
+
+### DELETE /api/tasks/:id — удалить задачу
+
+```bash
+curl -X DELETE https://bulut-kappa.vercel.app/api/tasks/TASK_UUID \
+  -H "X-API-Key: ВАШ_КЛЮЧ"
+```
+
+---
+
+### Примеры запросов
+
+```bash
+BASE="https://bulut-kappa.vercel.app/api"
+KEY="ВАШ_API_КЛЮЧ"
+
+# Задачи Ивана — активные, высокий приоритет
+curl "$BASE/tasks?assignee=Иван&status=active&priority=high" -H "X-API-Key: $KEY"
+
+# Просроченные, сортировка по дедлайну
+curl "$BASE/tasks?overdue=true&sort=due_date&order=asc" -H "X-API-Key: $KEY"
+
+# Все баги за июль
+curl "$BASE/tasks?type=bug&dueAfter=2026-07-01&dueBefore=2026-07-31" -H "X-API-Key: $KEY"
+
+# Поиск по тексту
+curl "$BASE/tasks?search=авторизация" -H "X-API-Key: $KEY"
+
+# Страница 2, по 25 задач
+curl "$BASE/tasks?page=2&limit=25" -H "X-API-Key: $KEY"
+```
+
+---
+
+## CI/CD
+
+При каждом `git push` в ветку `main` Vercel автоматически:
+1. Собирает проект (`next build`)
+2. Деплоит на продакшн
+3. Pull request'ы получают preview-деплой
+
+Ручной деплой: `vercel --prod`
+
+---
+
+## Стек
+
+| | |
+|---|---|
+| **Frontend** | Next.js 14 (App Router), TypeScript, Tailwind CSS |
+| **Backend** | Supabase (PostgreSQL + Auth + Realtime) |
+| **Drag & Drop** | @hello-pangea/dnd |
+| **Графики** | Recharts |
+| **Экспорт** | SheetJS (xlsx) |
+| **Иконки** | Lucide React |
+| **Деплой** | Vercel (CI/CD через GitHub) |
+| **Docker** | Multi-stage build, standalone output |

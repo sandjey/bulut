@@ -1,20 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const url     = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-/** Server-side admin client (bypasses RLS). Use only in API routes. */
-export function adminClient() {
-  return createClient(url, serviceKey || anonKey, {
-    auth: { persistSession: false },
-  });
-}
-
-/** Server-side client authenticated as the user via their JWT. */
+/** Server-side client. Pass a user JWT to act as that user (RLS applies).
+ *  Pass empty string "" to get an anon client (for signInWithPassword). */
 export function userClient(jwt: string) {
+  const headers: Record<string, string> = jwt ? { Authorization: `Bearer ${jwt}` } : {};
   return createClient(url, anonKey, {
     auth: { persistSession: false },
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    global: { headers },
   });
 }
