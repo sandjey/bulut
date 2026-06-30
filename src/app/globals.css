@@ -1,0 +1,256 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Светлая тема — мягкая, не «слепящая», с высоким контрастом текста */
+  --bg: 228 231 238;        /* спокойный серо-голубой фон */
+  --surface: 249 250 252;   /* карточки чуть светлее фона, без чистого белого */
+  --surface-2: 236 239 245; /* вторичные поверхности */
+  --border: 208 214 226;    /* заметные, но мягкие границы */
+  --fg: 22 28 42;           /* почти чёрный — отличная читаемость */
+  --muted: 84 94 112;       /* затемнённый вспомогательный текст */
+  --brand: 37 99 235;       /* «Океан» — синий */
+  --brand-2: 14 165 233;    /* голубой — для градиентов */
+  --brand-fg: 255 255 255;
+}
+
+.dark {
+  --bg: 9 11 17;
+  --surface: 20 24 33;
+  --surface-2: 28 33 45;
+  --border: 39 45 60;
+  --fg: 226 232 240;
+  --muted: 148 163 184;
+  --brand: 96 165 250;
+  --brand-2: 56 189 248;
+  --brand-fg: 12 14 22;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--fg));
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Prevent theme flash + smooth color transitions */
+body,
+.theme-transition * {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--muted));
+  background-clip: content-box;
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-border rounded-xl;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn text-brand-fg shadow-sm hover:shadow-md hover:brightness-105;
+    background-image: linear-gradient(135deg, rgb(var(--brand)), rgb(var(--brand-2)));
+  }
+  .brand-gradient {
+    background-image: linear-gradient(135deg, rgb(var(--brand)), rgb(var(--brand-2)));
+  }
+  .brand-text {
+    background-image: linear-gradient(135deg, rgb(var(--brand)), rgb(var(--brand-2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .btn-ghost {
+    @apply btn hover:bg-surface-2 text-fg;
+  }
+  .btn-outline {
+    @apply btn border border-border bg-surface hover:bg-surface-2 text-fg;
+  }
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:ring-2 focus:ring-brand/40 focus:border-brand placeholder:text-muted;
+  }
+  .label {
+    @apply text-xs font-semibold uppercase tracking-wide text-muted mb-1.5 block;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium;
+  }
+}
+
+/* Drag scrollbar styling for board columns */
+.board-scroll {
+  scrollbar-width: thin;
+}
+
+/* ============================================================
+   WOW: анимации, градиенты, стеклянные блоки, свечение
+   ============================================================ */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.92); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.08); }
+  66% { transform: translate(-25px, 25px) scale(0.95); }
+}
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.animate-fade-up { animation: fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-pop-in { animation: pop-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* стеклянный эффект (sidebar / topbar / виджеты) */
+.glass {
+  background-color: rgb(var(--surface) / 0.72);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+/* карточка с подъёмом и свечением при наведении */
+.hover-lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 40px -18px rgb(var(--brand) / 0.45);
+  border-color: rgb(var(--brand) / 0.4);
+}
+
+/* анимированная градиентная подложка из «блобов» */
+.aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.5;
+  animation: float-blob 18s ease-in-out infinite;
+}
+.aurora::before {
+  background: rgb(var(--brand));
+  top: -160px;
+  left: -80px;
+}
+.aurora::after {
+  background: rgb(var(--brand-2));
+  bottom: -180px;
+  right: -60px;
+  animation-delay: -7s;
+}
+
+/* «живой» градиентный текст */
+.brand-text-anim {
+  background-image: linear-gradient(110deg, rgb(var(--brand)), rgb(var(--brand-2)), rgb(var(--brand)));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-shift 6s linear infinite;
+}
+
+/* сияющая обводка для топовых виджетов */
+.ring-glow {
+  position: relative;
+}
+.ring-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgb(var(--brand) / 0.6), transparent 40%, rgb(var(--brand-2) / 0.5));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* сияние на primary-кнопке при наведении */
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  transform: translateX(-160%);
+}
+.btn-primary:hover::after {
+  animation: shimmer 0.9s ease;
+}
+
+/* стартовая задержка для каскадного появления */
+.stagger > * { animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.stagger > *:nth-child(8) { animation-delay: 0.30s; }
+.stagger > *:nth-child(9) { animation-delay: 0.34s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-pop-in, .stagger > *, .aurora::before, .aurora::after, .brand-text-anim {
+    animation: none !important;
+  }
+}

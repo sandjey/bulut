@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/macbookpro/.nvm/**)",
+      "Read(//Users/macbookpro/.nvm/versions/**)"
+    ]
+  }
+}
