@@ -54,7 +54,7 @@ export function BoardColumn({
   };
 
   return (
-    <div className="flex max-h-full w-[300px] shrink-0 flex-col rounded-xl bg-surface-2/60">
+    <div className="flex max-h-full w-[304px] shrink-0 flex-col rounded-2xl border border-border bg-surface-2/50">
       {/* header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         {renaming ? (
@@ -76,8 +76,8 @@ export function BoardColumn({
           </div>
         ) : (
           <>
-            <h3 className="flex-1 truncate text-sm font-semibold">{columnName}</h3>
-            <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-surface px-1.5 text-xs font-medium text-muted">
+            <h3 className="flex-1 truncate text-[13px] font-semibold uppercase tracking-wide text-muted">{columnName}</h3>
+            <span className="grid h-5 min-w-[20px] place-items-center rounded-full border border-border bg-surface px-1.5 text-xs font-semibold text-muted">
               {tasks.length}
             </span>
             <div className="relative">

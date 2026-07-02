@@ -24,7 +24,8 @@ type GroupMode = GroupBy | "direction";
 
 const STAGE_STYLE: Record<string, string> = {
   Готово: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  "На проверке": "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  "Готов к тестированию": "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  "На проверке": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   Возврат: "bg-red-500/10 text-red-600 dark:text-red-400",
   Вручную: "bg-surface-2 text-muted",
 };
@@ -75,7 +76,7 @@ export default function JournalPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <PageHeader
           title="Журнал"
-          subtitle="Задачи автоматически попадают в журнал на этапе «На проверке»"
+          subtitle="Задачи автоматически попадают в журнал на этапе «Готов к тестированию»"
         >
           <button className="btn-primary" onClick={() => setExportOpen(true)}>
             <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>

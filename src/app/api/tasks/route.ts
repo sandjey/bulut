@@ -210,6 +210,7 @@ function toTaskResponse(row: Record<string, unknown>) {
     stageTimes:     row.stage_times ?? {},
     returnCount:    row.return_count ?? 0,
     createdAt:      row.created_at,
+    createdBy:      row.created_by ?? "",
     completedAt:    row.completed_at ?? null,
     readyAt:        row.ready_at ?? null,
     testedAt:       row.tested_at ?? null,

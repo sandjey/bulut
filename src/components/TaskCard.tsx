@@ -12,6 +12,7 @@ import {
   CheckSquare,
   Paperclip,
   ImageIcon,
+  UserPlus,
 } from "lucide-react";
 import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
@@ -45,7 +46,9 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
   const attachCount = (task.attachments ?? []).length;
   const photoCount = (task.photos ?? []).length;
   // badge reflects the card's ACTUAL column (fixes: badge stuck after moving back)
-  const inReview = columnRole(board, task.columnId) === "review" && task.status !== "done";
+  const role = columnRole(board, task.columnId);
+  const isReady = role === "ready" && task.status !== "done";
+  const inReview = role === "review" && task.status !== "done";
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -66,14 +69,14 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
   return (
     <div
       className={cn(
-        "card group relative p-3 shadow-sm transition-all hover:shadow-md",
-        isDragging && "rotate-1 shadow-xl ring-2 ring-brand/40",
+        "card group relative overflow-hidden p-3 transition-all hover:border-border-strong hover:shadow-float",
+        isDragging && "rotate-[1.5deg] shadow-pop ring-2 ring-brand/50",
         done && "opacity-60"
       )}
     >
-      {/* top accent line by priority */}
+      {/* left accent rail by priority */}
       <span
-        className="absolute left-0 top-3 h-[calc(100%-1.5rem)] w-1 rounded-full"
+        className="absolute left-0 top-2.5 h-[calc(100%-1.25rem)] w-1 rounded-full"
         style={{
           backgroundColor:
             task.priority === "high" ? "#ef4444" : task.priority === "medium" ? "#f59e0b" : "#10b981",
@@ -146,6 +149,11 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
                 <CornerUpLeft className="h-3 w-3" /> Возврат{returnCount > 1 ? ` ×${returnCount}` : ""}
               </span>
             )}
+            {isReady && (
+              <span className="chip bg-violet-500/10 text-violet-600 dark:text-violet-400" title="Готов к тестированию">
+                <FlaskConical className="h-3 w-3" /> Готов к тесту
+              </span>
+            )}
             {inReview && (
               <span className="chip bg-sky-500/10 text-sky-600 dark:text-sky-400" title="На проверке">
                 <FlaskConical className="h-3 w-3" /> Проверка
@@ -187,6 +195,15 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
               {task.assignee && <Avatar name={task.assignee} size={22} />}
             </div>
           </div>
+
+          {task.createdBy && (
+            <div className="mt-2 flex items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-faint">
+              <UserPlus className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                Добавил: <span className="font-medium text-muted">{task.createdBy}</span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* drag handle */}

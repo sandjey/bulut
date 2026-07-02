@@ -55,6 +55,7 @@ export interface Task {
   tags: string[];
   status: TaskStatus;
   createdAt: string; // ISO
+  createdBy: string; // кто создал карточку (имя из «Я» или email)
   readyAt: string | null; // ISO — когда разработчик отправил на проверку
   testedAt: string | null; // ISO — когда QA проверил и принял
   completedAt: string | null; // ISO — финальное завершение
@@ -157,6 +158,12 @@ export const BOARD_COLORS = [
 export const DEFAULT_COLUMN_NAMES = [
   "К выполнению",
   "В процессе",
+  "Готов к тестированию",
   "На проверке",
   "Готово",
 ];
+
+/** Название колонки-этапа, попадающего в журнал (разработчик сдал в тест). */
+export const READY_COLUMN_NAME = "Готов к тестированию";
+/** Название колонки проверки QA. */
+export const REVIEW_COLUMN_NAME = "На проверке";

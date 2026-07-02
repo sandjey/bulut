@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, UserPlus } from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
 import { AssigneePicker } from "./AssigneePicker";
@@ -21,6 +21,7 @@ import {
 } from "@/lib/types";
 import { uniqueTags } from "@/lib/filters";
 import { withAlpha } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/date";
 
 interface TaskModalProps {
   open: boolean;
@@ -134,6 +135,14 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       }
     >
       <div className="space-y-4">
+        {editing && task?.createdBy && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted">
+            <UserPlus className="h-3.5 w-3.5 text-brand" />
+            Создал <span className="font-semibold text-fg">{task.createdBy}</span>
+            <span className="text-faint">· {fmtDateTime(task.createdAt)}</span>
+          </div>
+        )}
+
         <div>
           <label className="label">Название</label>
           <input

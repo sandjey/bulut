@@ -28,25 +28,26 @@ export default function HomePage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         {/* HERO */}
-        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface p-6 shadow-sm sm:p-8 animate-fade-up">
+        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface p-7 shadow-float sm:p-9 animate-fade-up">
           <div className="aurora" />
+          <div className="aurora-3" />
           <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/70 px-3 py-1 text-xs font-medium text-muted backdrop-blur">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/70 px-3 py-1 text-xs font-medium capitalize text-muted backdrop-blur">
                 <Sparkles className="h-3.5 w-3.5 text-brand" />
                 {fmtDate(todayISO(), "EEEE, d MMMM")}
               </div>
-              <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+              <h1 className="mt-3.5 text-3xl font-extrabold tracking-tight sm:text-[2.6rem] sm:leading-[1.05]">
                 С возвращением{name ? ", " : ""}
                 <span className="brand-text-anim">{name || "в Bulut"}</span> 👋
               </h1>
-              <p className="mt-2 max-w-md text-sm text-muted">
+              <p className="mt-2.5 max-w-md text-[15px] text-muted">
                 {stats.active > 0
                   ? `В работе ${stats.active} задач. Держим темп!`
                   : "Все задачи закрыты — отличная работа!"}
               </p>
             </div>
-            <button className="btn-primary shrink-0 px-5 py-2.5 text-base shadow-lg" onClick={() => setCreateOpen(true)}>
+            <button className="btn-primary shrink-0 px-5 py-2.5 text-base" onClick={() => setCreateOpen(true)}>
               <Plus className="h-5 w-5" /> Новая доска
             </button>
           </div>
@@ -54,10 +55,10 @@ export default function HomePage() {
 
         {/* STATS */}
         <div className="stagger mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatWidget icon={LayoutDashboard} label="Всего задач" value={stats.total} color="#2563eb" />
+          <StatWidget icon={LayoutDashboard} label="Всего задач" value={stats.total} color="#6366f1" />
           <StatWidget icon={CheckCircle2} label="Выполнено" value={stats.done} color="#10b981" />
-          <StatWidget icon={Clock} label="В работе" value={stats.active} color="#0ea5e9" />
-          <StatWidget icon={AlertTriangle} label="Просрочено" value={stats.overdue} color="#ef4444" />
+          <StatWidget icon={Clock} label="В работе" value={stats.active} color="#8b5cf6" />
+          <StatWidget icon={AlertTriangle} label="Просрочено" value={stats.overdue} color="#f43f5e" />
         </div>
 
         {/* BOARDS */}

@@ -54,17 +54,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-2.5">
+        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-border glass px-4 py-2.5">
           <button
             onClick={() => setMobileOpen(true)}
-            className="rounded-lg p-1.5 hover:bg-surface-2 lg:hidden"
+            className="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg lg:hidden"
             aria-label="Меню"
           >
             <Menu className="h-6 w-6" />
           </button>
           <div className="flex items-center gap-2 lg:hidden">
-            <Logo size={28} />
-            <span className="font-bold brand-text">Bulut</span>
+            <Logo size={30} />
+            <span className="font-bold brand-text font-display">Bulut</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <MePicker />

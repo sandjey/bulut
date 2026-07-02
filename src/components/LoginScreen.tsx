@@ -40,16 +40,17 @@ export function LoginScreen() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg px-4">
       {/* decorative gradient */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[500px] w-[500px] -translate-x-1/2 rounded-full bg-brand/20 blur-[120px]" />
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-brand/25 blur-[130px]" />
+      <div className="pointer-events-none absolute -bottom-48 right-[8%] h-[420px] w-[420px] rounded-full bg-brand-2/20 blur-[130px]" />
       <div className="absolute right-4 top-4">
         <ThemeToggle compact />
       </div>
 
       <div className="relative z-10 w-full max-w-sm animate-scale-in">
         <div className="mb-6 flex flex-col items-center text-center">
-          <Logo size={60} glow />
-          <h1 className="mt-4 text-3xl font-bold brand-text">Bulut</h1>
-          <p className="mt-1 text-sm text-muted">Менеджер задач с облачным хранением</p>
+          <Logo size={64} glow />
+          <h1 className="mt-4 text-4xl font-extrabold brand-text font-display">Bulut</h1>
+          <p className="mt-1.5 text-sm text-muted">Менеджер задач с облачным хранением</p>
         </div>
 
         {!configured && (
@@ -62,9 +63,9 @@ export function LoginScreen() {
           </div>
         )}
 
-        <div className="card p-6 shadow-xl">
+        <div className="card p-6 shadow-pop">
           {/* tabs */}
-          <div className="mb-5 flex rounded-lg bg-surface-2 p-1">
+          <div className="mb-5 flex rounded-xl bg-surface-2 p-1">
             {(["signin", "signup"] as const).map((m) => (
               <button
                 key={m}
@@ -73,8 +74,8 @@ export function LoginScreen() {
                   setError(null);
                   setInfo(null);
                 }}
-                className={`flex-1 rounded-md py-2 text-sm font-medium transition ${
-                  mode === m ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg"
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                  mode === m ? "bg-surface text-fg shadow-soft" : "text-muted hover:text-fg"
                 }`}
               >
                 {m === "signin" ? "Вход" : "Регистрация"}

@@ -16,7 +16,7 @@ import {
 import { LogOut } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
-import { cn, avatarColor, initials, contrastText } from "@/lib/utils";
+import { cn, avatarColor, initials, contrastText, withAlpha } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { CreateBoardDialog } from "./CreateBoardDialog";
@@ -38,7 +38,8 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
   const navItem = (
     href: string,
     label: string,
-    Icon: typeof LayoutDashboard
+    Icon: typeof LayoutDashboard,
+    color: string
   ) => {
     const active = pathname === href;
     return (
@@ -46,34 +47,52 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
         href={href}
         onClick={onNavigate}
         className={cn(
-          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
-          active
-            ? "bg-brand/10 font-semibold text-brand ring-1 ring-brand/20"
-            : "text-muted hover:translate-x-0.5 hover:bg-surface-2 hover:text-fg"
+          "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
+          active ? "bg-surface font-semibold text-fg shadow-soft" : "text-muted hover:bg-surface-2 hover:text-fg"
         )}
       >
-        <Icon className="h-[18px] w-[18px]" />
+        {active && (
+          <span
+            className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full"
+            style={{ backgroundColor: color }}
+          />
+        )}
+        <span
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-all"
+          style={{
+            backgroundColor: active ? withAlpha(color, 0.16) : "transparent",
+            color: active ? color : undefined,
+          }}
+        >
+          <Icon
+            className={cn("h-[17px] w-[17px] transition-transform", !active && "group-hover:scale-110")}
+            style={!active ? { color } : undefined}
+          />
+        </span>
         {label}
       </Link>
     );
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col glass">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-5 pt-5 pb-4">
-        <Logo size={38} />
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+        <Logo size={40} />
         <div>
-          <div className="text-base font-bold leading-tight brand-text">Bulut</div>
+          <div className="text-[17px] font-bold leading-tight brand-text font-display">Bulut</div>
           <div className="text-[11px] text-muted leading-tight">Облачные задачи</div>
         </div>
       </div>
 
       <div className="px-3">
-        <button onClick={onOpenSearch} className="input flex items-center gap-2 text-muted">
-          <Search className="h-4 w-4" />
+        <button
+          onClick={onOpenSearch}
+          className="group flex w-full items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 text-muted transition hover:border-border-strong hover:bg-surface-2"
+        >
+          <Search className="h-4 w-4 transition-colors group-hover:text-fg" />
           <span className="text-sm">Поиск...</span>
-          <kbd className="ml-auto hidden rounded border border-border px-1.5 text-[10px] sm:inline">
+          <kbd className="ml-auto hidden rounded-md border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint sm:inline">
             ⌘K
           </kbd>
         </button>
@@ -81,22 +100,22 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
 
       {/* Nav */}
       <nav className="mt-4 space-y-1 px-3">
-        {navItem("/", "Доски", LayoutDashboard)}
-        {navItem("/my", "Мои задачи", CheckSquare)}
-        {navItem("/journal", "Журнал", BookOpenText)}
-        {navItem("/reports", "Отчёты", FileBarChart)}
-        {navItem("/team", "Команда", Users)}
-        {navItem("/analytics", "Аналитика", BarChart3)}
+        {navItem("/", "Доски", LayoutDashboard, "#6366f1")}
+        {navItem("/my", "Мои задачи", CheckSquare, "#8b5cf6")}
+        {navItem("/journal", "Журнал", BookOpenText, "#0ea5e9")}
+        {navItem("/reports", "Отчёты", FileBarChart, "#10b981")}
+        {navItem("/team", "Команда", Users, "#f43f5e")}
+        {navItem("/analytics", "Аналитика", BarChart3, "#f59e0b")}
       </nav>
 
       {/* Boards list */}
-      <div className="mt-6 flex items-center justify-between px-5 pb-1">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+      <div className="mt-6 flex items-center justify-between px-5 pb-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">
           Доски
         </span>
         <button
           onClick={() => setCreateOpen(true)}
-          className="rounded-md p-1 text-muted transition hover:bg-surface-2 hover:text-fg"
+          className="rounded-lg p-1 text-muted transition hover:bg-surface-2 hover:text-brand"
           title="Создать доску"
         >
           <Plus className="h-4 w-4" />
@@ -105,7 +124,7 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
 
       <div className="board-scroll flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
         {boards.length === 0 && (
-          <p className="px-2 py-3 text-xs text-muted">Пока нет досок</p>
+          <p className="px-2 py-3 text-xs text-faint">Пока нет досок</p>
         )}
         {boards.map((b) => {
           const active = pathname === `/board/${b.id}`;
@@ -115,13 +134,13 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
               href={`/board/${b.id}`}
               onClick={onNavigate}
               className={cn(
-                "group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                active ? "bg-surface-2 font-medium text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"
+                "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-all",
+                active ? "bg-surface-2 font-semibold text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"
               )}
             >
               <span
-                className="h-3 w-3 shrink-0 rounded-full"
-                style={{ backgroundColor: b.color }}
+                className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-transparent transition-all group-hover:ring-[color:var(--dot)]/25"
+                style={{ backgroundColor: b.color, ["--dot" as string]: b.color }}
               />
               <span className="truncate">{b.name}</span>
             </Link>
@@ -131,7 +150,7 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
 
       {/* Footer */}
       <div className="space-y-2 border-t border-border p-3">
-        <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+        <div className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition hover:bg-surface-2">
           <span
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold"
             style={{ backgroundColor: avatarBg, color: contrastText(avatarBg) }}

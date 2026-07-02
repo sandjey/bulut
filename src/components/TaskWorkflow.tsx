@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   CircleDashed,
 } from "lucide-react";
-import { useStore, columnRole } from "@/lib/store";
+import { useStore, columnRole, reviewColumnId } from "@/lib/store";
 import { Board } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { AssigneePicker } from "./AssigneePicker";
@@ -23,7 +23,7 @@ import { stageTimeList } from "@/lib/stages";
 import { cn } from "@/lib/utils";
 
 export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }) {
-  const { tasks, comments, sendToReview, acceptTask, returnTask, toggleDone, addComment, deleteComment } =
+  const { tasks, comments, sendToReview, acceptTask, returnTask, toggleDone, addComment, deleteComment, moveTask } =
     useStore();
   const task = tasks.find((t) => t.id === taskId);
 
@@ -58,9 +58,11 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
     setCommentText("");
   };
 
+  const startReview = () => moveTask(task.id, reviewColumnId(board), 0);
+
   const stages = [
     { label: "Создано", at: task.createdAt, Icon: Flag, done: true },
-    { label: "На проверке", at: task.readyAt, Icon: FlaskConical, done: !!task.readyAt },
+    { label: "Готов к тестированию", at: task.readyAt, Icon: FlaskConical, done: !!task.readyAt },
     { label: "Протестировано", at: task.testedAt, Icon: CheckCheck, done: !!task.testedAt },
     { label: "Готово", at: task.completedAt, Icon: CheckCircle2, done: task.status === "done" },
   ];
@@ -124,12 +126,23 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
 
       {/* Workflow actions */}
       <div className="flex flex-wrap gap-2">
-        {role !== "review" && role !== "done" && (
+        {/* dev handoff → «Готов к тестированию» (пишется в журнал) */}
+        {(role === "todo" || role === "progress") && (
           <button
             className="btn bg-sky-500/10 text-sky-600 hover:bg-sky-500/20 dark:text-sky-400"
             onClick={() => sendToReview(task.id)}
           >
-            <Send className="h-4 w-4" /> Отправить на проверку
+            <Send className="h-4 w-4" /> Готов к тестированию
+          </button>
+        )}
+
+        {/* QA берёт в работу → «На проверке» */}
+        {role === "ready" && (
+          <button
+            className="btn bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 dark:text-violet-400"
+            onClick={startReview}
+          >
+            <FlaskConical className="h-4 w-4" /> На проверку
           </button>
         )}
 

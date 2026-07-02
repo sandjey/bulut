@@ -31,17 +31,25 @@ export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
   return (
     <div
       className="hover-lift card group relative overflow-hidden rounded-2xl p-0"
-      style={{ borderTopColor: board.color, borderTopWidth: 3 }}
     >
-      <Link href={`/board/${board.id}`} className="block p-5">
+      {/* top color rail */}
+      <span
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ background: `linear-gradient(90deg, ${board.color}, ${withAlpha(board.color, 0.35)})` }}
+      />
+      <Link href={`/board/${board.id}`} className="block p-5 pt-6">
         <div
-          className="absolute right-0 top-0 h-24 w-24 rounded-bl-full opacity-10"
+          className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full opacity-[0.12] blur-xl"
           style={{ background: board.color }}
         />
         <div className="flex items-start gap-3">
           <span
-            className="mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-bold"
-            style={{ backgroundColor: withAlpha(board.color, 0.15), color: board.color }}
+            className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-sm font-bold"
+            style={{
+              backgroundColor: withAlpha(board.color, 0.14),
+              color: board.color,
+              boxShadow: `inset 0 0 0 1px ${withAlpha(board.color, 0.22)}`,
+            }}
           >
             {board.name.slice(0, 2).toUpperCase()}
           </span>
@@ -75,10 +83,13 @@ export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
             <span>Прогресс</span>
             <span className="font-medium">{pct}%</span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+          <div className="h-2 overflow-hidden rounded-full bg-surface-3">
             <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${pct}%`, backgroundColor: board.color }}
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: `${pct}%`,
+                background: `linear-gradient(90deg, ${withAlpha(board.color, 0.7)}, ${board.color})`,
+              }}
             />
           </div>
         </div>

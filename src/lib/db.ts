@@ -41,6 +41,7 @@ interface TaskRow {
   status: TaskStatus;
   position: number;
   created_at: string;
+  created_by: string | null;
   ready_at: string | null;
   tested_at: string | null;
   completed_at: string | null;
@@ -108,6 +109,7 @@ const toTask = (r: TaskRow): Task => ({
   tags: r.tags ?? [],
   status: r.status,
   createdAt: r.created_at,
+  createdBy: r.created_by ?? "",
   readyAt: r.ready_at,
   testedAt: r.tested_at,
   completedAt: r.completed_at,
@@ -259,6 +261,7 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.tags !== undefined) row.tags = patch.tags;
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.order !== undefined) row.position = patch.order;
+  if (patch.createdBy !== undefined) row.created_by = patch.createdBy;
   if (patch.readyAt !== undefined) row.ready_at = patch.readyAt;
   if (patch.testedAt !== undefined) row.tested_at = patch.testedAt;
   if (patch.completedAt !== undefined) row.completed_at = patch.completedAt;
@@ -302,6 +305,7 @@ function taskToRow(t: Task, userId: string) {
     status: t.status,
     position: t.order,
     created_at: t.createdAt,
+    created_by: t.createdBy ?? "",
     ready_at: t.readyAt,
     tested_at: t.testedAt,
     completed_at: t.completedAt,
@@ -358,6 +362,7 @@ export async function updateJournalRow(id: string, patch: Partial<JournalEntry>)
   if (patch.boardName !== undefined) row.board_name = patch.boardName;
   if (patch.taskTitle !== undefined) row.task_title = patch.taskTitle;
   if (patch.assignee !== undefined) row.assignee = patch.assignee;
+  if (patch.stage !== undefined) row.stage = patch.stage;
   const { error } = await client().from("journal").update(row).eq("id", id);
   if (error) throw error;
 }

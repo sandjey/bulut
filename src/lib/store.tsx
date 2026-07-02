@@ -22,11 +22,14 @@ import {
   TaskType,
   BOARD_COLORS,
   DEFAULT_COLUMN_NAMES,
+  READY_COLUMN_NAME,
+  REVIEW_COLUMN_NAME,
 } from "./types";
 import * as db from "./db";
 import { loadCache, saveCache } from "./cache";
 import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
+import { getMe } from "./me";
 import { avatarColor } from "./utils";
 import { JournalTrigger } from "./settings";
 import { formatDuration } from "./date";
@@ -66,14 +69,14 @@ function mkEntry(task: Task, board: Board | undefined, stage: string, note = "")
 
 const ACTION_LABEL: Record<JournalTrigger, string> = {
   done: "Готово",
-  review: "На проверке",
+  review: READY_COLUMN_NAME, // «Готов к тестированию» — разработчик сдал в тест
   returned: "Возврат",
   moved: "Перемещение",
 };
 
 /**
  * Which stage transitions are auto-logged to the journal. Fixed by design:
- * a card is always recorded when it reaches «На проверке».
+ * a card is recorded when it reaches «Готов к тестированию» (dev finished).
  */
 const AUTO_JOURNAL: JournalTrigger[] = ["review"];
 
@@ -108,6 +111,25 @@ function uuid(): string {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+/**
+ * One-time board migration: split the old single «На проверке» column into
+ * «Готов к тестированию» (dev handoff — keeps existing cards) followed by a
+ * fresh «На проверке» (QA testing). Idempotent: skipped once the board already
+ * has a «Готов к тестированию» column.
+ */
+function migrateBoardColumns(board: Board): { columns: Column[]; changed: boolean } {
+  const hasReady = board.columns.some((c) => c.name === READY_COLUMN_NAME);
+  const reviewIdx = board.columns.findIndex((c) => c.name === REVIEW_COLUMN_NAME);
+  if (hasReady || reviewIdx === -1) return { columns: board.columns, changed: false };
+
+  const columns = board.columns.map((c, i) =>
+    i === reviewIdx ? { ...c, name: READY_COLUMN_NAME } : c
+  );
+  // insert a new «На проверке» right after the renamed column
+  columns.splice(reviewIdx + 1, 0, { id: uuid(), name: REVIEW_COLUMN_NAME });
+  return { columns, changed: true };
 }
 
 export interface NewTaskInput {
@@ -162,6 +184,7 @@ const EMPTY: AppData = { boards: [], tasks: [], journal: [], comments: [], membe
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const userEmail = user?.email ?? "";
 
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
@@ -263,6 +286,33 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     [refetch]
   );
+
+  // One-time column migration: «На проверке» → «Готов к тестированию» + new «На проверке».
+  useEffect(() => {
+    if (!ready) return;
+    const d = dataRef.current;
+    if (!d.boards.some((b) => migrateBoardColumns(b).changed)) return;
+    const boards = d.boards.map((b) => {
+      const { columns, changed } = migrateBoardColumns(b);
+      if (changed && userId) persist(db.updateBoardRow(b.id, { columns }));
+      return changed ? { ...b, columns } : b;
+    });
+    apply({ ...d, boards });
+  }, [ready, data.boards, userId, apply, persist]);
+
+  // One-time journal migration: old handoff entries were labelled «На проверке»,
+  // which is now the «Готов к тестированию» stage — relabel them to match.
+  useEffect(() => {
+    if (!ready) return;
+    const d = dataRef.current;
+    const stale = d.journal.filter((j) => j.stage === REVIEW_COLUMN_NAME);
+    if (stale.length === 0) return;
+    const journal = d.journal.map((j) =>
+      j.stage === REVIEW_COLUMN_NAME ? { ...j, stage: READY_COLUMN_NAME } : j
+    );
+    apply({ ...d, journal });
+    if (userId) stale.forEach((j) => persist(db.updateJournalRow(j.id, { stage: READY_COLUMN_NAME })));
+  }, [ready, data.journal, userId, apply, persist]);
 
   // ---------------- Boards ----------------
   const createBoard = useCallback(
@@ -376,6 +426,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         tags: input.tags ?? [],
         status: "active",
         createdAt: new Date().toISOString(),
+        createdBy: getMe() || userEmail || "",
         readyAt: null,
         testedAt: null,
         completedAt: null,
@@ -391,7 +442,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (userId) persist(db.insertTask(task, userId));
       return task;
     },
-    [apply, persist, userId]
+    [apply, persist, userId, userEmail]
   );
 
   const updateTask = useCallback(
@@ -444,8 +495,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       let removeDoneFor: string | null = null;
 
       if (board) {
-        const doneCol = board.columns[board.columns.length - 1]?.id;
-        const reviewCol = board.columns[board.columns.length - 2]?.id;
+        const n = board.columns.length;
+        const doneCol = board.columns[n - 1]?.id;
+        const reviewCol = board.columns[n - 2]?.id; // «На проверке» (QA)
+        const readyCol = board.columns[n - 3]?.id; // «Готов к тестированию» (dev handoff)
 
         if (toColumnId === doneCol && moving.status !== "done") {
           statusPatch = {
@@ -460,9 +513,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           statusPatch = { status: "active", completedAt: null, testedAt: null };
           removeDoneFor = moving.id;
           action = "moved";
-        } else if (toColumnId === reviewCol) {
+        } else if (toColumnId === readyCol) {
+          // dev handoff — record readiness and log to the journal
           statusPatch = { readyAt: moving.readyAt ?? nowIso };
           action = "review";
+        } else if (toColumnId === reviewCol) {
+          // QA started testing — keep readiness, but don't double-log
+          statusPatch = { readyAt: moving.readyAt ?? nowIso };
+          action = "moved";
         }
       }
 
@@ -662,11 +720,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const task = d.tasks.find((t) => t.id === id);
       if (!task) return;
       const board = d.boards.find((b) => b.id === task.boardId);
-      const reviewCol = board?.columns[board.columns.length - 2]?.id ?? task.columnId;
+      const cols = board?.columns ?? [];
+      // «Готов к тестированию» = третья с конца; fallback на предпоследнюю
+      const readyCol =
+        cols[cols.length - 3]?.id ?? cols[cols.length - 2]?.id ?? task.columnId;
       const nowIso = new Date().toISOString();
-      const changed = reviewCol !== task.columnId;
+      const changed = readyCol !== task.columnId;
       const patch: Partial<Task> = {
-        columnId: reviewCol,
+        columnId: readyCol,
         readyAt: task.readyAt ?? nowIso,
         status: "active",
         completedAt: null,
@@ -882,22 +943,29 @@ export function doneColumnId(board: Board): string {
   return board.columns[board.columns.length - 1]?.id ?? "";
 }
 
-/** "Review / testing" column — second from the end by convention. */
+/** "Review / QA" column — second from the end by convention. */
 export function reviewColumnId(board: Board): string {
   const cols = board.columns;
   return cols.length >= 2 ? cols[cols.length - 2].id : doneColumnId(board);
+}
+
+/** "Ready for testing" column — third from the end (dev handoff). */
+export function readyColumnId(board: Board): string {
+  const cols = board.columns;
+  return cols.length >= 3 ? cols[cols.length - 3].id : reviewColumnId(board);
 }
 
 /** Column role helpers for a given column within its board. */
 export function columnRole(
   board: Board,
   columnId: string
-): "todo" | "progress" | "review" | "done" {
+): "todo" | "progress" | "ready" | "review" | "done" {
   const cols = board.columns;
   const last = cols.length - 1;
   const idx = cols.findIndex((c) => c.id === columnId);
   if (idx === last) return "done";
   if (idx === last - 1) return "review";
+  if (idx === last - 2 && idx >= 1) return "ready";
   if (idx === 0) return "todo";
   return "progress";
 }
