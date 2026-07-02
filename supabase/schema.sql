@@ -108,6 +108,7 @@ alter table public.journal add column if not exists type text not null default '
 alter table public.tasks   add column if not exists stage_times jsonb not null default '{}'::jsonb;  -- время по этапам
 alter table public.tasks   add column if not exists checklist   jsonb not null default '[]'::jsonb;  -- чек-лист
 alter table public.tasks   add column if not exists attachments jsonb not null default '[]'::jsonb;  -- вложения
+alter table public.tasks   add column if not exists photos      jsonb not null default '[]'::jsonb;  -- фото (base64), удаляются при «Готово»
 
 -- Комментарии к задачам (в т.ч. причины возврата от QA)
 create table if not exists public.task_comments (

@@ -7,6 +7,8 @@ import { TagInput } from "./TagInput";
 import { AssigneePicker } from "./AssigneePicker";
 import { TaskWorkflow } from "./TaskWorkflow";
 import { TaskExtras } from "./TaskExtras";
+import { PhotoUploader } from "./PhotoUploader";
+import { AutoTextarea } from "./AutoTextarea";
 import { useStore } from "@/lib/store";
 import {
   Board,
@@ -148,8 +150,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
 
         <div>
           <label className="label">Описание</label>
-          <textarea
-            className="input min-h-[90px] resize-y"
+          <AutoTextarea
+            className="input"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
             placeholder="Детали задачи..."
@@ -246,6 +248,12 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
           <label className="label">Теги</label>
           <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
         </div>
+
+        {editing && task && (
+          <div className="border-t border-border pt-4">
+            <PhotoUploader taskId={task.id} />
+          </div>
+        )}
 
         {editing && task && (
           <div className="border-t border-border pt-4">

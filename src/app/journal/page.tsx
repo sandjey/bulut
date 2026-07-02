@@ -8,8 +8,6 @@ import {
   Plus,
   CornerDownLeft,
   Table2,
-  SlidersHorizontal,
-  Check,
   ChevronDown,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -20,11 +18,6 @@ import { AssigneePicker } from "@/components/AssigneePicker";
 import { TypeBadge } from "@/components/TypeBadge";
 import { GroupBy, fmtDate, groupKey, groupLabel, todayISO } from "@/lib/date";
 import { JournalEntry, TaskType, TASK_TYPES, TASK_TYPE_KEYS } from "@/lib/types";
-import {
-  useJournalTriggers,
-  JOURNAL_TRIGGER_LABELS,
-  JournalTrigger,
-} from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
 type GroupMode = GroupBy | "direction";
@@ -42,8 +35,6 @@ export default function JournalPage() {
   const [query, setQuery] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [boardFilter, setBoardFilter] = useState<string>("all");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [triggers, setTriggers] = useJournalTriggers();
 
   const activeBoard = boards.find((b) => b.id === boardFilter) ?? null;
 
@@ -56,12 +47,6 @@ export default function JournalPage() {
       )
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   }, [journal, query, activeBoard]);
-
-  const toggleTrigger = (t: JournalTrigger) => {
-    setTriggers(
-      triggers.includes(t) ? triggers.filter((x) => x !== t) : [...triggers, t]
-    );
-  };
 
   const groups = useMemo(() => {
     const map = new Map<string, { sort: string; label: string; color?: string; entries: JournalEntry[] }>();
@@ -88,45 +73,10 @@ export default function JournalPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <PageHeader title="Журнал" subtitle="Журнал действий по доскам — как Excel, прямо в браузере">
-          <div className="relative">
-            <button className="btn-outline" onClick={() => setSettingsOpen((o) => !o)}>
-              <SlidersHorizontal className="h-4 w-4" />
-              <span className="hidden sm:inline">Когда писать</span>
-            </button>
-            {settingsOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setSettingsOpen(false)} />
-                <div className="absolute right-0 z-30 mt-1 w-72 rounded-xl border border-border bg-surface p-2 shadow-xl animate-scale-in">
-                  <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                    Добавлять в журнал
-                  </p>
-                  {(Object.keys(JOURNAL_TRIGGER_LABELS) as JournalTrigger[]).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => toggleTrigger(t)}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm transition hover:bg-surface-2"
-                    >
-                      <span
-                        className={cn(
-                          "grid h-5 w-5 shrink-0 place-items-center rounded border",
-                          triggers.includes(t)
-                            ? "border-transparent bg-brand text-brand-fg"
-                            : "border-border"
-                        )}
-                      >
-                        {triggers.includes(t) && <Check className="h-3.5 w-3.5" />}
-                      </span>
-                      {JOURNAL_TRIGGER_LABELS[t]}
-                    </button>
-                  ))}
-                  <p className="px-2 pt-1.5 text-xs text-muted">
-                    Карточка попадёт в журнал автоматически на выбранных этапах.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
+        <PageHeader
+          title="Журнал"
+          subtitle="Задачи автоматически попадают в журнал на этапе «На проверке»"
+        >
           <button className="btn-primary" onClick={() => setExportOpen(true)}>
             <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
           </button>

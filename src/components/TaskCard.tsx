@@ -11,6 +11,7 @@ import {
   Clock,
   CheckSquare,
   Paperclip,
+  ImageIcon,
 } from "lucide-react";
 import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
@@ -42,6 +43,7 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
   const checklist = task.checklist ?? [];
   const checkDone = checklist.filter((i) => i.done).length;
   const attachCount = (task.attachments ?? []).length;
+  const photoCount = (task.photos ?? []).length;
   // badge reflects the card's ACTUAL column (fixes: badge stuck after moving back)
   const inReview = columnRole(board, task.columnId) === "review" && task.status !== "done";
 
@@ -163,6 +165,11 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
             {attachCount > 0 && (
               <span className="chip bg-surface-2 text-muted" title="Вложения">
                 <Paperclip className="h-3 w-3" /> {attachCount}
+              </span>
+            )}
+            {photoCount > 0 && (
+              <span className="chip bg-surface-2 text-muted" title="Фото">
+                <ImageIcon className="h-3 w-3" /> {photoCount}
               </span>
             )}
             {taskComments.length > 0 && (

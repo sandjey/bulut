@@ -24,10 +24,11 @@ import {
   DEFAULT_COLUMN_NAMES,
 } from "./types";
 import * as db from "./db";
+import { loadCache, saveCache } from "./cache";
 import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
 import { avatarColor } from "./utils";
-import { getJournalTriggers, JournalTrigger } from "./settings";
+import { JournalTrigger } from "./settings";
 import { formatDuration } from "./date";
 import { accrueStageTimes, stageTimeList } from "./stages";
 import { format } from "date-fns";
@@ -71,8 +72,14 @@ const ACTION_LABEL: Record<JournalTrigger, string> = {
 };
 
 /**
- * Append a journal entry for a stage transition if the user's settings
- * include that trigger. "done" entries are deduped per task.
+ * Which stage transitions are auto-logged to the journal. Fixed by design:
+ * a card is always recorded when it reaches «На проверке».
+ */
+const AUTO_JOURNAL: JournalTrigger[] = ["review"];
+
+/**
+ * Append a journal entry for a stage transition when it's an auto-logged
+ * action. "done" entries are deduped per task.
  */
 function appendLog(
   journal: JournalEntry[],
@@ -81,7 +88,7 @@ function appendLog(
   action: JournalTrigger,
   note = ""
 ): { journal: JournalEntry[]; entry: JournalEntry | null } {
-  if (!getJournalTriggers().includes(action)) return { journal, entry: null };
+  if (!AUTO_JOURNAL.includes(action)) return { journal, entry: null };
   const label =
     action === "moved"
       ? board?.columns.find((c) => c.id === task.columnId)?.name ?? "Перемещение"
@@ -175,7 +182,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId, apply]);
 
-  // (Re)load whenever the signed-in user changes
+  // (Re)load whenever the signed-in user changes.
+  // Cache-first: hydrate instantly from localStorage (offline-safe, no empty
+  // flash on reload / navigation), then refresh from Supabase in the background.
   useEffect(() => {
     let cancelled = false;
     if (!userId) {
@@ -183,7 +192,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setReady(false);
       return;
     }
-    setReady(false);
+
+    const cached = loadCache(userId);
+    if (cached) {
+      apply(cached);
+      setReady(true); // show cached data immediately
+    } else {
+      setReady(false);
+    }
+
     db.fetchAll(userId)
       .then((fresh) => {
         if (!cancelled) {
@@ -192,13 +209,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch((e) => {
-        console.error("Не удалось загрузить данные", e);
+        // offline / server unreachable — keep whatever the cache gave us
+        console.error("Не удалось загрузить данные (работаем из кэша)", e);
         if (!cancelled) setReady(true);
       });
     return () => {
       cancelled = true;
     };
   }, [userId, apply]);
+
+  // Write-through: persist every state change to the offline cache
+  useEffect(() => {
+    if (userId && ready) saveCache(userId, data);
+  }, [data, userId, ready]);
 
   // Real-time: subscribe to all table changes so every user sees updates instantly
   useEffect(() => {
@@ -361,6 +384,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         stageTimes: {},
         checklist: [],
         attachments: [],
+        photos: [],
         order: Date.now(),
       };
       apply({ ...dataRef.current, tasks: [...dataRef.current.tasks, task] });
@@ -429,6 +453,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             completedAt: nowIso,
             testedAt: moving.testedAt ?? nowIso,
             readyAt: moving.readyAt ?? nowIso,
+            photos: [], // освобождаем место: фото не нужны после завершения
           };
           action = "done";
         } else if (toColumnId !== doneCol && moving.status === "done") {
@@ -499,6 +524,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             columnId: doneColId ?? task.columnId,
             stageEnteredAt: movingColumn ? nowIso : task.stageEnteredAt,
             stageTimes: movingColumn ? accrueStageTimes(task, board, nowIso) : task.stageTimes,
+            photos: [], // фото удаляются при завершении
           }
         : { ...task, status: "active", completedAt: null, testedAt: null };
 
@@ -525,6 +551,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           columnId: updatedTask.columnId,
           stageEnteredAt: updatedTask.stageEnteredAt,
           stageTimes: updatedTask.stageTimes,
+          photos: updatedTask.photos,
         })
       );
       if (userId) {
@@ -683,6 +710,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         readyAt: task.readyAt ?? nowIso,
         stageEnteredAt: acceptChanged ? nowIso : task.stageEnteredAt,
         stageTimes: acceptChanged ? accrueStageTimes(task, board, nowIso) : task.stageTimes,
+        photos: [], // фото удаляются при завершении
       };
       const updated = { ...task, ...patch };
 

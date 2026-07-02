@@ -49,6 +49,7 @@ interface TaskRow {
   stage_times: Record<string, number>;
   checklist: import("./types").ChecklistItem[];
   attachments: import("./types").Attachment[];
+  photos: import("./types").TaskPhoto[];
 }
 
 interface CommentRow {
@@ -115,6 +116,7 @@ const toTask = (r: TaskRow): Task => ({
   stageTimes: r.stage_times ?? {},
   checklist: r.checklist ?? [],
   attachments: r.attachments ?? [],
+  photos: r.photos ?? [],
   order: r.position,
 });
 
@@ -265,6 +267,7 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.stageTimes !== undefined) row.stage_times = patch.stageTimes;
   if (patch.checklist !== undefined) row.checklist = patch.checklist;
   if (patch.attachments !== undefined) row.attachments = patch.attachments;
+  if (patch.photos !== undefined) row.photos = patch.photos;
   const { error } = await client().from("tasks").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -307,6 +310,7 @@ function taskToRow(t: Task, userId: string) {
     stage_times: t.stageTimes ?? {},
     checklist: t.checklist ?? [],
     attachments: t.attachments ?? [],
+    photos: t.photos ?? [],
   };
 }
 

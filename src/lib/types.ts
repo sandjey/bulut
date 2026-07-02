@@ -63,6 +63,7 @@ export interface Task {
   stageTimes: Record<string, number>; // имя колонки → накопленные секунды
   checklist: ChecklistItem[]; // подзадачи / чек-лист
   attachments: Attachment[]; // ссылки/файлы
+  photos: TaskPhoto[]; // фото (base64) — удаляются при переходе в «Готово»
   order: number; // ordering within a column
 }
 
@@ -86,6 +87,16 @@ export interface Attachment {
   name: string;
   url: string;
 }
+
+/** Photo attached to a task. `dataUrl` is a compressed base64 JPEG/PNG. */
+export interface TaskPhoto {
+  id: string;
+  name: string;
+  dataUrl: string;
+}
+
+/** Max photos allowed per task. */
+export const MAX_TASK_PHOTOS = 10;
 
 export type CommentKind = "comment" | "return";
 
