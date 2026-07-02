@@ -47,6 +47,7 @@ interface TaskRow {
   completed_at: string | null;
   stage_entered_at: string | null;
   return_count: number;
+  returns: import("./types").ReturnEvent[];
   stage_times: Record<string, number>;
   checklist: import("./types").ChecklistItem[];
   attachments: import("./types").Attachment[];
@@ -115,6 +116,7 @@ const toTask = (r: TaskRow): Task => ({
   completedAt: r.completed_at,
   stageEnteredAt: r.stage_entered_at ?? r.created_at,
   returnCount: r.return_count ?? 0,
+  returns: r.returns ?? [],
   stageTimes: r.stage_times ?? {},
   checklist: r.checklist ?? [],
   attachments: r.attachments ?? [],
@@ -267,6 +269,7 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.completedAt !== undefined) row.completed_at = patch.completedAt;
   if (patch.stageEnteredAt !== undefined) row.stage_entered_at = patch.stageEnteredAt;
   if (patch.returnCount !== undefined) row.return_count = patch.returnCount;
+  if (patch.returns !== undefined) row.returns = patch.returns;
   if (patch.stageTimes !== undefined) row.stage_times = patch.stageTimes;
   if (patch.checklist !== undefined) row.checklist = patch.checklist;
   if (patch.attachments !== undefined) row.attachments = patch.attachments;
@@ -311,6 +314,7 @@ function taskToRow(t: Task, userId: string) {
     completed_at: t.completedAt,
     stage_entered_at: t.stageEnteredAt,
     return_count: t.returnCount,
+    returns: t.returns ?? [],
     stage_times: t.stageTimes ?? {},
     checklist: t.checklist ?? [],
     attachments: t.attachments ?? [],

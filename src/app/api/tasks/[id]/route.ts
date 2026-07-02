@@ -107,6 +107,7 @@ function toTaskDetailResponse(row: Record<string, unknown>) {
     attachments: row.attachments ?? [],
     stageTimes:  row.stage_times ?? {},
     returnCount: row.return_count ?? 0,
+    returns:     row.returns ?? [],
     createdAt:   row.created_at,
     createdBy:   row.created_by ?? "",
     completedAt: row.completed_at ?? null,

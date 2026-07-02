@@ -23,6 +23,7 @@ import { DeadlineBadge } from "./DeadlineBadge";
 import { TypeBadge } from "./TypeBadge";
 import { Avatar } from "./Avatar";
 import { cn } from "@/lib/utils";
+import { returnsSummary } from "@/lib/returns";
 
 interface TaskCardProps {
   task: Task;
@@ -144,7 +145,7 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
             {hasReturn && (
               <span
                 className="chip bg-red-500/10 text-red-600 dark:text-red-400"
-                title={`Возвращена QA на доработку: ${returnCount} раз`}
+                title={returnsSummary(task.returns) || `Возвращена на доработку: ${returnCount} раз`}
               >
                 <CornerUpLeft className="h-3 w-3" /> Возврат{returnCount > 1 ? ` ×${returnCount}` : ""}
               </span>

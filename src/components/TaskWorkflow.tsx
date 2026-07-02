@@ -13,6 +13,7 @@ import {
   FlaskConical,
   CheckCircle2,
   CircleDashed,
+  Clock,
 } from "lucide-react";
 import { useStore, columnRole, reviewColumnId } from "@/lib/store";
 import { Board } from "@/lib/types";
@@ -123,6 +124,39 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
           ))}
         </div>
       </div>
+
+      {/* История возвратов */}
+      {(task.returns?.length ?? 0) > 0 && (
+        <div>
+          <span className="label flex items-center gap-1.5">
+            <CornerUpLeft className="h-3.5 w-3.5" /> История возвратов
+            <span className="text-muted">({task.returns.length})</span>
+          </span>
+          <div className="space-y-1">
+            {[...task.returns]
+              .sort((a, b) => b.at.localeCompare(a.at))
+              .map((r, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg border border-red-500/25 bg-red-500/5 px-2.5 py-1.5 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="font-medium text-red-600 dark:text-red-400">
+                      {r.from} → {r.to}
+                    </span>
+                    <span className="chip bg-surface-2 text-muted">
+                      <Clock className="h-3 w-3" /> {formatDuration(r.seconds)}
+                    </span>
+                    <span className="ml-auto text-xs text-muted">{fmtDateTime(r.at)}</span>
+                  </div>
+                  {r.reason && (
+                    <p className="mt-0.5 text-xs text-muted">Причина: {r.reason}</p>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Workflow actions */}
       <div className="flex flex-wrap gap-2">

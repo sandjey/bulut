@@ -11,10 +11,16 @@ export function ExportModal({
   open,
   onClose,
   defaultBoardId = "all",
+  defaultOnlyDone = false,
+  defaultQuery = "",
 }: {
   open: boolean;
   onClose: () => void;
   defaultBoardId?: string;
+  /** «Отчёт QA» — предвыбрать только выполненные (из журнала). */
+  defaultOnlyDone?: boolean;
+  /** Текст активного поиска из журнала. */
+  defaultQuery?: string;
 }) {
   const store = useStore();
   const { boards, tasks, journal } = store;
@@ -24,13 +30,18 @@ export function ExportModal({
   const [boardId, setBoardId] = useState<string>(defaultBoardId);
   const [status, setStatus] = useState<"all" | "active" | "done">("all");
   const [assignee, setAssignee] = useState<string>("all");
+  const [query, setQuery] = useState("");
   const [includeTasks, setIncludeTasks] = useState(true);
   const [includeJournal, setIncludeJournal] = useState(true);
   const [includeSummary, setIncludeSummary] = useState(true);
 
   useEffect(() => {
-    if (open) setBoardId(defaultBoardId);
-  }, [open, defaultBoardId]);
+    if (open) {
+      setBoardId(defaultBoardId);
+      setStatus(defaultOnlyDone ? "done" : "all");
+      setQuery(defaultQuery);
+    }
+  }, [open, defaultBoardId, defaultOnlyDone, defaultQuery]);
 
   const assignees = useMemo(() => uniqueAssignees(tasks), [tasks]);
 
@@ -40,14 +51,25 @@ export function ExportModal({
     boardId,
     status,
     assignee,
+    onlyDone: status === "done",
+    query: query || undefined,
   };
 
   const previewCount = useMemo(
     () => filterTasksForExport({ boards, tasks, journal }, filter),
     // filter is derived from the primitive deps below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [boards, tasks, journal, from, to, boardId, status, assignee]
+    [boards, tasks, journal, from, to, boardId, status, assignee, query]
   ).length;
+
+  const activeBoardName = boards.find((b) => b.id === boardId)?.name;
+  const filterHints = [
+    activeBoardName && `доска «${activeBoardName}»`,
+    status === "done" && "только выполненные (QA)",
+    status === "active" && "только активные",
+    query && `поиск «${query}»`,
+    (from || to) && `${from || "…"} — ${to || "…"}`,
+  ].filter(Boolean) as string[];
 
   const doExport = () => {
     exportToExcel(
@@ -76,15 +98,22 @@ export function ExportModal({
       }
     >
       <div className="space-y-4">
-        <div className="flex items-center gap-3 rounded-lg bg-emerald-500/10 p-3 text-emerald-700 dark:text-emerald-400">
+        <div className="flex items-center gap-3 rounded-xl bg-emerald-500/10 p-3 text-emerald-700 dark:text-emerald-400">
           <FileSpreadsheet className="h-8 w-8 shrink-0" />
           <div className="text-sm">
-            <p className="font-medium">Настоящий файл .xlsx</p>
+            <p className="font-medium">Оформленный файл .xlsx</p>
             <p className="text-emerald-700/70 dark:text-emerald-400/70">
-              С форматированными таблицами, автофильтром и сводкой.
+              Фирменные заголовки, «зебра», цветные статусы и автофильтр.
             </p>
           </div>
         </div>
+
+        {filterHints.length > 0 && (
+          <div className="rounded-xl border border-brand/30 bg-brand/[0.06] p-3 text-sm">
+            <span className="font-medium text-brand">Учитываются фильтры:</span>{" "}
+            <span className="text-fg">{filterHints.join(" · ")}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -137,8 +166,8 @@ export function ExportModal({
         <div>
           <label className="label">Листы в файле</label>
           <div className="space-y-2">
-            <Check label="Задачи (№, Задача, Доска, Исполнитель, Приоритет, Дедлайн, Статус, Дата выполнения)" checked={includeTasks} onChange={setIncludeTasks} />
-            <Check label="Журнал (Дата, Доска, Задача, Исполнитель, Заметки)" checked={includeJournal} onChange={setIncludeJournal} />
+            <Check label="Задачи (№, Задача, Тип, Доска, Исполнитель, Приоритет, Дедлайн, Статус, время по этапам)" checked={includeTasks} onChange={setIncludeTasks} />
+            <Check label="Журнал (Дата, Этап, Готово, время «Готов к тесту» и «На проверке», Задача, Заметки)" checked={includeJournal} onChange={setIncludeJournal} />
             <Check label="Сводка по направлениям" checked={includeSummary} onChange={setIncludeSummary} />
           </div>
         </div>

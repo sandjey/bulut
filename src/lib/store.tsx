@@ -20,6 +20,7 @@ import {
   Member,
   Priority,
   TaskType,
+  ReturnEvent,
   BOARD_COLORS,
   DEFAULT_COLUMN_NAMES,
   READY_COLUMN_NAME,
@@ -35,6 +36,11 @@ import { JournalTrigger } from "./settings";
 import { formatDuration } from "./date";
 import { accrueStageTimes, stageTimeList } from "./stages";
 import { format } from "date-fns";
+
+/** Seconds elapsed between two ISO timestamps (never negative). */
+function secondsBetween(fromIso: string, toIso: string): number {
+  return Math.max(0, Math.floor((Date.parse(toIso) - Date.parse(fromIso)) / 1000));
+}
 
 /** Build the journal note from a card: description + per-stage time breakdown. */
 function buildNote(task: Task, board: Board | undefined, explicitNote: string): string {
@@ -481,6 +487,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         completedAt: null,
         stageEnteredAt: new Date().toISOString(),
         returnCount: 0,
+        returns: [],
         stageTimes: {},
         checklist: [],
         attachments: [],
@@ -575,8 +582,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           action = "moved";
         } else if (toIdx >= 0 && toIdx < readyIdx && moving.readyAt) {
           // карточку вернули из «Готов к тестированию»/«На проверке» назад в работу —
-          // она больше не готова: убираем отметку и её запись из журнала
-          statusPatch = { readyAt: null };
+          // она больше не готова: убираем отметку, запись из журнала и фиксируем возврат
+          const fromName = board.columns.find((c) => c.id === moving.columnId)?.name ?? "—";
+          const toName = board.columns[toIdx]?.name ?? "—";
+          const event: ReturnEvent = {
+            at: nowIso,
+            from: fromName,
+            to: toName,
+            seconds: secondsBetween(moving.stageEnteredAt ?? moving.createdAt, nowIso),
+          };
+          statusPatch = {
+            readyAt: null,
+            returnCount: (moving.returnCount ?? 0) + 1,
+            returns: [...(moving.returns ?? []), event],
+          };
           removeReadyFor = moving.id;
           action = "moved";
         }
@@ -866,6 +885,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const inProgressCol = board?.columns[1]?.id ?? board?.columns[0]?.id ?? task.columnId;
       const nowIso = new Date().toISOString();
 
+      const returnEvent: ReturnEvent = {
+        at: nowIso,
+        from: board?.columns.find((c) => c.id === task.columnId)?.name ?? "—",
+        to: board?.columns.find((c) => c.id === inProgressCol)?.name ?? "—",
+        seconds: secondsBetween(task.stageEnteredAt ?? task.createdAt, nowIso),
+        reason: reason.trim() || undefined,
+      };
+
       const patch: Partial<Task> = {
         columnId: inProgressCol,
         status: "active",
@@ -878,6 +905,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             ? accrueStageTimes(task, board, nowIso)
             : task.stageTimes,
         returnCount: (task.returnCount ?? 0) + 1,
+        returns: [...(task.returns ?? []), returnEvent],
       };
       const updated = { ...task, ...patch };
 

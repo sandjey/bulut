@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   FlaskConical,
   ClipboardCheck,
+  CornerUpLeft,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/PageHeader";
@@ -30,6 +31,7 @@ import {
   REVIEW_COLUMN_NAME,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { returnsSummary } from "@/lib/returns";
 
 type GroupMode = GroupBy | "direction";
 
@@ -298,6 +300,12 @@ export default function JournalPage() {
                                 <TypeBadge type={e.type} size="xs" />
                                 <span>{e.taskTitle}</span>
                               </span>
+                              {task && (task.returnCount ?? 0) > 0 && (
+                                <div className="mt-1 flex items-start gap-1 text-[11px] font-normal text-red-600 dark:text-red-400">
+                                  <CornerUpLeft className="mt-0.5 h-3 w-3 shrink-0" />
+                                  <span>Возвраты: {returnsSummary(task.returns) || `×${task.returnCount}`}</span>
+                                </div>
+                              )}
                             </Td>
                             <Td>
                               <span className="inline-flex items-center gap-2">
@@ -334,7 +342,13 @@ export default function JournalPage() {
         )}
       </div>
 
-      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        defaultBoardId={boardFilter}
+        defaultOnlyDone={onlyDone}
+        defaultQuery={query}
+      />
     </div>
   );
 }

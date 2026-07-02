@@ -61,11 +61,21 @@ export interface Task {
   completedAt: string | null; // ISO — финальное завершение
   stageEnteredAt: string | null; // ISO — когда карточка вошла в текущий этап
   returnCount: number; // сколько раз возвращали на доработку
+  returns: ReturnEvent[]; // история возвратов: откуда/куда, когда, сколько времени
   stageTimes: Record<string, number>; // имя колонки → накопленные секунды
   checklist: ChecklistItem[]; // подзадачи / чек-лист
   attachments: Attachment[]; // ссылки/файлы
   photos: TaskPhoto[]; // фото (base64) — удаляются при переходе в «Готово»
   order: number; // ordering within a column
+}
+
+/** Одно событие возврата карточки на доработку. */
+export interface ReturnEvent {
+  at: string; // ISO — когда вернули
+  from: string; // с какого этапа вернули (имя колонки, напр. «На проверке»)
+  to: string; // на какой этап вернули (имя колонки, напр. «В процессе»)
+  seconds: number; // сколько карточка провела на этапе `from` до возврата
+  reason?: string; // причина (если возврат через кнопку QA)
 }
 
 export interface Member {
