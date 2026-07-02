@@ -10,6 +10,7 @@ import {
   Table2,
   SlidersHorizontal,
   Check,
+  ChevronDown,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/PageHeader";
@@ -448,29 +449,86 @@ function Td({ children, className }: { children: React.ReactNode; className?: st
 }
 
 function NotesCell({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // measure whether the collapsed text is clipped (needs a toggle)
+  useEffect(() => {
+    if (editing) return;
+    const el = textRef.current;
+    if (el) setOverflows(el.scrollHeight - el.clientHeight > 1);
+  }, [value, editing, expanded]);
 
   const resize = () => {
-    const el = ref.current;
+    const el = areaRef.current;
     if (el) {
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
     }
   };
 
-  useEffect(() => {
-    resize();
-  }, []);
+  const startEditing = () => {
+    setEditing(true);
+    setExpanded(true);
+    setTimeout(() => {
+      resize();
+      areaRef.current?.focus();
+    }, 0);
+  };
+
+  if (editing) {
+    return (
+      <textarea
+        ref={areaRef}
+        defaultValue={value}
+        rows={1}
+        onInput={resize}
+        onBlur={(e) => {
+          onCommit(e.target.value);
+          setEditing(false);
+          setExpanded(false);
+        }}
+        placeholder="Добавить заметку…"
+        className="block w-full resize-none border-0 bg-brand/[0.04] px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted/60"
+      />
+    );
+  }
+
+  if (!value) {
+    return (
+      <button
+        onClick={startEditing}
+        className="block w-full px-3 py-2.5 text-left text-sm text-muted/60 transition hover:bg-brand/[0.04]"
+      >
+        Добавить заметку…
+      </button>
+    );
+  }
 
   return (
-    <textarea
-      ref={ref}
-      defaultValue={value}
-      rows={1}
-      onInput={resize}
-      onBlur={(e) => onCommit(e.target.value)}
-      placeholder="Добавить заметку…"
-      className="block w-full resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed outline-none transition placeholder:text-muted/60 focus:bg-brand/[0.04]"
-    />
+    <div className="px-3 py-2.5">
+      <p
+        ref={textRef}
+        onClick={startEditing}
+        className={cn(
+          "cursor-text whitespace-pre-wrap text-sm leading-relaxed",
+          !expanded && "line-clamp-2"
+        )}
+      >
+        {value}
+      </p>
+      {(overflows || expanded) && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 inline-flex items-center gap-0.5 text-xs font-medium text-brand transition hover:opacity-80"
+        >
+          {expanded ? "Свернуть" : "Показать полностью"}
+          <ChevronDown className={cn("h-3.5 w-3.5 transition", expanded && "rotate-180")} />
+        </button>
+      )}
+    </div>
   );
 }
