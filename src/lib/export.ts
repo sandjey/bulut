@@ -224,7 +224,8 @@ export function buildTasksSheet(data: ExportData, tasks: Task[]): XLSX.WorkSheet
     "Доска",
     "Исполнитель",
     "Приоритет",
-    "Дедлайн",
+    "Дедлайн: тест",
+    "Дедлайн: готово",
     "Статус",
     "Возвратов",
     "Возвраты (детально)",
@@ -250,6 +251,7 @@ export function buildTasksSheet(data: ExportData, tasks: Task[]): XLSX.WorkSheet
       t.assignee || "—",
       PRIORITY_META[t.priority].label,
       t.dueDate ? fmtDate(t.dueDate) : "—",
+      t.doneDueDate ? fmtDate(t.doneDueDate) : "—",
       statusLabel(t, board),
       t.returnCount ?? 0,
       returnsSummary(t.returns) || "—",
@@ -265,12 +267,12 @@ export function buildTasksSheet(data: ExportData, tasks: Task[]): XLSX.WorkSheet
   return styledSheet("Bulut · Задачи", headers, rows, {
     colWidths: [
       { wch: 5 }, { wch: 40 }, { wch: 12 }, { wch: 18 }, { wch: 16 },
-      { wch: 11 }, { wch: 13 }, { wch: 18 }, { wch: 10 }, { wch: 34 },
+      { wch: 11 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 10 }, { wch: 34 },
       { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 40 }, { wch: 20 },
     ],
-    centerCols: [0, 5, 6, 7, 8],
-    wrapCols: [1, 9, 14],
-    cellPaint: (c, v) => (c === 5 ? priorityPaint(v) : c === 7 ? statusPaint(v) : null),
+    centerCols: [0, 5, 6, 7, 8, 9],
+    wrapCols: [1, 10, 15],
+    cellPaint: (c, v) => (c === 5 ? priorityPaint(v) : c === 8 ? statusPaint(v) : null),
   });
 }
 
@@ -283,6 +285,8 @@ export function buildJournalSheet(entries: JournalEntry[], data: ExportData): XL
     "Время: Готов к тесту",
     "Время: На проверке",
     "Возвраты",
+    "Дедлайн: тест",
+    "Дедлайн: готово",
     "Тип",
     "Задача",
     "Исполнитель",
@@ -303,6 +307,8 @@ export function buildJournalSheet(entries: JournalEntry[], data: ExportData): XL
       done && readySec > 0 ? formatDuration(readySec) : "—",
       done && reviewSec > 0 ? formatDuration(reviewSec) : "—",
       returnsSummary(task?.returns) || "—",
+      task?.dueDate ? fmtDate(task.dueDate) : "—",
+      task?.doneDueDate ? fmtDate(task.doneDueDate) : "—",
       (TASK_TYPES[e.type] ?? TASK_TYPES.task).label,
       e.taskTitle,
       e.assignee || "—",
@@ -313,10 +319,10 @@ export function buildJournalSheet(entries: JournalEntry[], data: ExportData): XL
   return styledSheet("Bulut · Журнал", headers, rows, {
     colWidths: [
       { wch: 13 }, { wch: 18 }, { wch: 20 }, { wch: 12 }, { wch: 18 },
-      { wch: 18 }, { wch: 34 }, { wch: 12 }, { wch: 40 }, { wch: 16 }, { wch: 46 },
+      { wch: 18 }, { wch: 34 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 40 }, { wch: 16 }, { wch: 46 },
     ],
-    centerCols: [0, 3, 4, 5, 7],
-    wrapCols: [6, 8, 10],
+    centerCols: [0, 3, 4, 5, 7, 8, 9],
+    wrapCols: [6, 10, 12],
     cellPaint: (c, v) => (c === 3 ? statusPaint(String(v).includes("Готово") ? "Готово" : v) : null),
   });
 }

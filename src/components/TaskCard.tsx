@@ -141,7 +141,8 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
 
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             <TypeBadge type={task.type} size="xs" />
-            <DeadlineBadge dueDate={task.dueDate} done={done} />
+            <DeadlineBadge dueDate={task.dueDate} done={done || !!task.readyAt} label="Тест" />
+            <DeadlineBadge dueDate={task.doneDueDate} done={done} label="Готово" />
             {hasReturn && (
               <span
                 className="chip bg-red-500/10 text-red-600 dark:text-red-400"

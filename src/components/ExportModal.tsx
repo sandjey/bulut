@@ -166,7 +166,7 @@ export function ExportModal({
         <div>
           <label className="label">Листы в файле</label>
           <div className="space-y-2">
-            <Check label="Задачи (№, Задача, Тип, Доска, Исполнитель, Приоритет, Дедлайн, Статус, время по этапам)" checked={includeTasks} onChange={setIncludeTasks} />
+            <Check label="Задачи (№, Задача, Тип, Доска, Исполнитель, Приоритет, 2 дедлайна, Статус, возвраты, время по этапам)" checked={includeTasks} onChange={setIncludeTasks} />
             <Check label="Журнал (Дата, Этап, Готово, время «Готов к тесту» и «На проверке», Задача, Заметки)" checked={includeJournal} onChange={setIncludeJournal} />
             <Check label="Сводка по направлениям" checked={includeSummary} onChange={setIncludeSummary} />
           </div>

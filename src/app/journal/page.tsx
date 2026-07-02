@@ -20,6 +20,7 @@ import { ExportModal } from "@/components/ExportModal";
 import { Avatar } from "@/components/Avatar";
 import { AssigneePicker } from "@/components/AssigneePicker";
 import { TypeBadge } from "@/components/TypeBadge";
+import { DeadlineBadge } from "@/components/DeadlineBadge";
 import { GroupBy, fmtDate, groupKey, groupLabel, todayISO, formatDuration } from "@/lib/date";
 import {
   JournalEntry,
@@ -300,6 +301,16 @@ export default function JournalPage() {
                                 <TypeBadge type={e.type} size="xs" />
                                 <span>{e.taskTitle}</span>
                               </span>
+                              {task && (task.dueDate || task.doneDueDate) && (
+                                <div className="mt-1 flex flex-wrap gap-1 font-normal">
+                                  <DeadlineBadge dueDate={task.dueDate} done={!!task.readyAt} label="Тест" />
+                                  <DeadlineBadge
+                                    dueDate={task.doneDueDate}
+                                    done={task.status === "done"}
+                                    label="Готово"
+                                  />
+                                </div>
+                              )}
                               {task && (task.returnCount ?? 0) > 0 && (
                                 <div className="mt-1 flex items-start gap-1 text-[11px] font-normal text-red-600 dark:text-red-400">
                                   <CornerUpLeft className="mt-0.5 h-3 w-3 shrink-0" />

@@ -277,7 +277,8 @@ function LoadView() {
                       <span className="chip bg-surface-2 text-muted">
                         <Clock className="h-3 w-3" /> {durationSince(t.stageEnteredAt)}
                       </span>
-                      <DeadlineBadge dueDate={t.dueDate} />
+                      <DeadlineBadge dueDate={t.dueDate} done={!!t.readyAt} label="Тест" />
+                      <DeadlineBadge dueDate={t.doneDueDate} label="Готово" />
                     </div>
                   </Link>
                 );

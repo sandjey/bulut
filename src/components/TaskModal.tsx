@@ -43,6 +43,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   const [priority, setPriority] = useState<Priority>("medium");
   const [type, setType] = useState<TaskType>("task");
   const [dueDate, setDueDate] = useState("");
+  const [doneDueDate, setDoneDueDate] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [columnId, setColumnId] = useState("");
 
@@ -57,6 +58,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setPriority(task.priority);
       setType(task.type ?? "task");
       setDueDate(task.dueDate ?? "");
+      setDoneDueDate(task.doneDueDate ?? "");
       setTags(task.tags);
       setColumnId(task.columnId);
     } else {
@@ -66,6 +68,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setPriority("medium");
       setType("task");
       setDueDate("");
+      setDoneDueDate("");
       setTags([]);
       setColumnId(defaultColumnId ?? board.columns[0]?.id ?? "");
     }
@@ -81,6 +84,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         priority,
         type,
         dueDate: dueDate || null,
+        doneDueDate: doneDueDate || null,
         tags,
         columnId,
       });
@@ -94,6 +98,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         priority,
         type,
         dueDate: dueDate || null,
+        doneDueDate: doneDueDate || null,
         tags,
       });
     }
@@ -243,12 +248,26 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
           </div>
 
           <div>
-            <label className="label">Дедлайн</label>
+            <label className="label">Дедлайн · Готов к тестированию</label>
             <input
               type="date"
               className="input"
               value={dueDate}
+              max={doneDueDate || undefined}
               onChange={(e) => setDueDate(e.target.value)}
+              title="Срок разработчика — сдать в тест"
+            />
+          </div>
+
+          <div>
+            <label className="label">Дедлайн · Готово</label>
+            <input
+              type="date"
+              className="input"
+              value={doneDueDate}
+              min={dueDate || undefined}
+              onChange={(e) => setDoneDueDate(e.target.value)}
+              title="Срок тестировщика — завершить задачу"
             />
           </div>
         </div>

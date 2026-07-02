@@ -37,6 +37,7 @@ interface TaskRow {
   priority: Priority;
   type: TaskType;
   due_date: string | null;
+  done_due_date: string | null;
   tags: string[];
   status: TaskStatus;
   position: number;
@@ -107,6 +108,7 @@ const toTask = (r: TaskRow): Task => ({
   priority: r.priority,
   type: (r.type ?? "task") as TaskType,
   dueDate: r.due_date,
+  doneDueDate: r.done_due_date ?? null,
   tags: r.tags ?? [],
   status: r.status,
   createdAt: r.created_at,
@@ -260,6 +262,7 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.priority !== undefined) row.priority = patch.priority;
   if (patch.type !== undefined) row.type = patch.type;
   if (patch.dueDate !== undefined) row.due_date = patch.dueDate;
+  if (patch.doneDueDate !== undefined) row.done_due_date = patch.doneDueDate;
   if (patch.tags !== undefined) row.tags = patch.tags;
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.order !== undefined) row.position = patch.order;
@@ -304,6 +307,7 @@ function taskToRow(t: Task, userId: string) {
     priority: t.priority,
     type: t.type,
     due_date: t.dueDate,
+    done_due_date: t.doneDueDate,
     tags: t.tags,
     status: t.status,
     position: t.order,

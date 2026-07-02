@@ -20,6 +20,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { Avatar } from "@/components/Avatar";
 import { todayISO, format } from "@/lib/date";
+import { isTaskOverdue } from "@/lib/deadlines";
 import { subDays } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -36,9 +37,7 @@ export default function AnalyticsPage() {
       boards.map((b) => {
         const bt = tasks.filter((t) => t.boardId === b.id);
         const done = bt.filter((t) => t.status === "done").length;
-        const overdue = bt.filter(
-          (t) => t.status !== "done" && t.dueDate && t.dueDate < today
-        ).length;
+        const overdue = bt.filter((t) => isTaskOverdue(t, today)).length;
         const active = bt.filter((t) => t.status !== "done").length;
         return {
           id: b.id,
@@ -87,9 +86,7 @@ export default function AnalyticsPage() {
   const totals = useMemo(() => {
     const done = tasks.filter((t) => t.status === "done").length;
     const active = tasks.filter((t) => t.status !== "done").length;
-    const overdue = tasks.filter(
-      (t) => t.status !== "done" && t.dueDate && t.dueDate < today
-    ).length;
+    const overdue = tasks.filter((t) => isTaskOverdue(t, today)).length;
     return { done, active, overdue, total: tasks.length };
   }, [tasks, today]);
 

@@ -12,6 +12,7 @@ import { DeadlineBadge } from "@/components/DeadlineBadge";
 import { MePicker } from "@/components/MePicker";
 import { Avatar } from "@/components/Avatar";
 import { todayISO } from "@/lib/date";
+import { effectiveDueDate } from "@/lib/deadlines";
 import { Task } from "@/lib/types";
 import { parseISO, isValid, differenceInCalendarDays } from "date-fns";
 
@@ -117,8 +118,9 @@ export default function MyTasksPage() {
 }
 
 function classify(t: Task, today: string): string {
-  if (!t.dueDate) return "none";
-  const d = parseISO(t.dueDate);
+  const eff = effectiveDueDate(t);
+  if (!eff) return "none";
+  const d = parseISO(eff);
   if (!isValid(d)) return "none";
   const days = differenceInCalendarDays(d, parseISO(today));
   if (days < 0) return "overdue";
@@ -157,7 +159,9 @@ function Section({
       </div>
       <div className="space-y-2">
         {tasks
-          .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+          .sort((a, b) =>
+            (effectiveDueDate(a) ?? "9999").localeCompare(effectiveDueDate(b) ?? "9999")
+          )
           .map((t) => {
             const board = boards.find((b) => b.id === t.boardId);
             return (
@@ -169,7 +173,8 @@ function Section({
                 <PriorityDot priority={t.priority} />
                 <span className="min-w-0 flex-1 truncate font-medium">{t.title}</span>
                 <TypeBadge type={t.type} size="xs" />
-                <DeadlineBadge dueDate={t.dueDate} />
+                <DeadlineBadge dueDate={t.dueDate} done={!!t.readyAt} label="Тест" />
+                <DeadlineBadge dueDate={t.doneDueDate} label="Готово" />
                 {board && (
                   <span className="hidden items-center gap-1.5 text-xs text-muted sm:flex">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: board.color }} />

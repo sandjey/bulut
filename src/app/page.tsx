@@ -8,6 +8,7 @@ import { BoardCard } from "@/components/BoardCard";
 import { CreateBoardDialog } from "@/components/CreateBoardDialog";
 import { StatWidget } from "@/components/StatWidget";
 import { todayISO, fmtDate } from "@/lib/date";
+import { isTaskOverdue } from "@/lib/deadlines";
 
 export default function HomePage() {
   const { boards, tasks } = useStore();
@@ -18,7 +19,7 @@ export default function HomePage() {
     const today = todayISO();
     const done = tasks.filter((t) => t.status === "done").length;
     const active = tasks.filter((t) => t.status !== "done").length;
-    const overdue = tasks.filter((t) => t.status !== "done" && t.dueDate && t.dueDate < today).length;
+    const overdue = tasks.filter((t) => isTaskOverdue(t, today)).length;
     return { done, active, overdue, total: tasks.length };
   }, [tasks]);
 

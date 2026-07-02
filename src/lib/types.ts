@@ -51,7 +51,8 @@ export interface Task {
   assignee: string;
   priority: Priority;
   type: TaskType;
-  dueDate: string | null; // ISO date (yyyy-MM-dd) or null
+  dueDate: string | null; // дедлайн «Готов к тестированию» (разработчик) — yyyy-MM-dd
+  doneDueDate: string | null; // дедлайн «Готово» (тестировщик/финал) — yyyy-MM-dd
   tags: string[];
   status: TaskStatus;
   createdAt: string; // ISO

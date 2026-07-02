@@ -165,6 +165,7 @@ export interface NewTaskInput {
   priority?: Priority;
   type?: TaskType;
   dueDate?: string | null;
+  doneDueDate?: string | null;
   tags?: string[];
 }
 
@@ -478,6 +479,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         priority: input.priority ?? "medium",
         type: input.type ?? "task",
         dueDate: input.dueDate ?? null,
+        doneDueDate: input.doneDueDate ?? null,
         tags: input.tags ?? [],
         status: "active",
         createdAt: new Date().toISOString(),

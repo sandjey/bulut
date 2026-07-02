@@ -15,9 +15,12 @@ const BG: Record<string, string> = {
 export function DeadlineBadge({
   dueDate,
   done = false,
+  label,
 }: {
   dueDate: string | null;
   done?: boolean;
+  /** Префикс-подпись, напр. «Тест» / «Готово». */
+  label?: string;
 }) {
   const info = deadlineInfo(dueDate, done);
   if (info.status === "none") return null;
@@ -36,8 +39,10 @@ export function DeadlineBadge({
         info.color,
         (info.status === "overdue" || info.status === "urgent") && !done && "animate-pulse"
       )}
+      title={label ? `${label}: ${info.label}` : info.label}
     >
       <Icon className="h-3 w-3" />
+      {label && <span className="font-semibold opacity-80">{label}:</span>}
       {info.label}
     </span>
   );

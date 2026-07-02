@@ -7,6 +7,7 @@ import { Board, Task } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import { withAlpha } from "@/lib/utils";
 import { todayISO } from "@/lib/date";
+import { isTaskOverdue } from "@/lib/deadlines";
 
 export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
   const { deleteBoard, updateBoard } = useStore();
@@ -18,7 +19,7 @@ export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
   const done = bt.filter((t) => t.status === "done").length;
   const total = bt.length;
   const today = todayISO();
-  const overdue = bt.filter((t) => t.status !== "done" && t.dueDate && t.dueDate < today).length;
+  const overdue = bt.filter((t) => isTaskOverdue(t, today)).length;
   const active = total - done;
   const pct = total ? Math.round((done / total) * 100) : 0;
 

@@ -1,4 +1,5 @@
 import { Task, PRIORITY_META } from "./types";
+import { isTaskOverdue, effectiveDueDate } from "./deadlines";
 import { parseISO, isValid } from "date-fns";
 
 export type SortKey = "created" | "due" | "priority" | "title";
@@ -27,16 +28,17 @@ export const DEFAULT_FILTERS: FilterState = {
   sort: "created",
 };
 
-function matchesDue(task: Task, due: DueFilter): boolean {
+function matchesDue(task: Task, due: DueFilter, today: string): boolean {
   if (due === "all") return true;
-  if (due === "none") return !task.dueDate;
-  if (!task.dueDate) return false;
-  const d = parseISO(task.dueDate);
+  if (due === "overdue") return isTaskOverdue(task, today);
+  const eff = effectiveDueDate(task);
+  if (due === "none") return !eff;
+  if (!eff) return false;
+  const d = parseISO(eff);
   if (!isValid(d)) return false;
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.floor((d.getTime() - startToday.getTime()) / 86400000);
-  if (due === "overdue") return diffDays < 0 && task.status !== "done";
   if (due === "today") return diffDays === 0;
   if (due === "week") return diffDays >= 0 && diffDays <= 7;
   return true;
@@ -59,12 +61,9 @@ export function applyFilters(tasks: Task[], f: FilterState): Task[] {
 
     if (f.status === "active" && t.status !== "active") return false;
     if (f.status === "done" && t.status !== "done") return false;
-    if (f.status === "overdue") {
-      if (t.status === "done") return false;
-      if (!t.dueDate || t.dueDate >= todayKey) return false;
-    }
+    if (f.status === "overdue" && !isTaskOverdue(t, todayKey)) return false;
 
-    if (!matchesDue(t, f.due)) return false;
+    if (!matchesDue(t, f.due, todayKey)) return false;
     return true;
   });
 
@@ -82,10 +81,12 @@ export function sortTasks(tasks: Task[], sort: SortKey): Task[] {
       );
     case "due":
       return copy.sort((a, b) => {
-        if (!a.dueDate && !b.dueDate) return 0;
-        if (!a.dueDate) return 1;
-        if (!b.dueDate) return -1;
-        return a.dueDate.localeCompare(b.dueDate);
+        const da = effectiveDueDate(a);
+        const db = effectiveDueDate(b);
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.localeCompare(db);
       });
     case "created":
     default:

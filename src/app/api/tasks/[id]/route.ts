@@ -42,6 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.assignee    !== undefined) patch.assignee    = String(body.assignee);
   if (body.columnId    !== undefined) patch.column_id   = String(body.columnId);
   if (body.dueDate     !== undefined) patch.due_date    = body.dueDate ?? null;
+  if (body.doneDueDate !== undefined) patch.done_due_date = body.doneDueDate ?? null;
   if (body.tags        !== undefined) patch.tags        = Array.isArray(body.tags) ? body.tags.map(String) : [];
 
   if (body.priority !== undefined && PRIORITIES.includes(body.priority as string))
@@ -102,6 +103,7 @@ function toTaskDetailResponse(row: Record<string, unknown>) {
     type:        row.type,
     status:      row.status,
     dueDate:     row.due_date,
+    doneDueDate: row.done_due_date ?? null,
     tags:        row.tags,
     checklist:   row.checklist ?? [],
     attachments: row.attachments ?? [],
