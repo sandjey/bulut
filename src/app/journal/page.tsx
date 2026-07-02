@@ -9,6 +9,9 @@ import {
   CornerDownLeft,
   Table2,
   ChevronDown,
+  CheckCircle2,
+  FlaskConical,
+  ClipboardCheck,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/PageHeader";
@@ -16,8 +19,16 @@ import { ExportModal } from "@/components/ExportModal";
 import { Avatar } from "@/components/Avatar";
 import { AssigneePicker } from "@/components/AssigneePicker";
 import { TypeBadge } from "@/components/TypeBadge";
-import { GroupBy, fmtDate, groupKey, groupLabel, todayISO } from "@/lib/date";
-import { JournalEntry, TaskType, TASK_TYPES, TASK_TYPE_KEYS } from "@/lib/types";
+import { GroupBy, fmtDate, groupKey, groupLabel, todayISO, formatDuration } from "@/lib/date";
+import {
+  JournalEntry,
+  Task,
+  TaskType,
+  TASK_TYPES,
+  TASK_TYPE_KEYS,
+  READY_COLUMN_NAME,
+  REVIEW_COLUMN_NAME,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type GroupMode = GroupBy | "direction";
@@ -31,23 +42,36 @@ const STAGE_STYLE: Record<string, string> = {
 };
 
 export default function JournalPage() {
-  const { journal, boards, addJournalEntry, updateJournalEntry, deleteJournalEntry } = useStore();
+  const { journal, boards, tasks, addJournalEntry, updateJournalEntry, deleteJournalEntry } = useStore();
   const [groupBy, setGroupBy] = useState<GroupMode>("day");
   const [query, setQuery] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [boardFilter, setBoardFilter] = useState<string>("all");
+  const [onlyDone, setOnlyDone] = useState(false);
 
   const activeBoard = boards.find((b) => b.id === boardFilter) ?? null;
+
+  const taskById = useMemo(() => {
+    const m = new Map<string, Task>();
+    tasks.forEach((t) => m.set(t.id, t));
+    return m;
+  }, [tasks]);
+
+  const isEntryDone = (e: JournalEntry) =>
+    !!e.taskId && taskById.get(e.taskId)?.status === "done";
+
+  const doneCount = useMemo(() => journal.filter(isEntryDone).length, [journal, taskById]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return journal
       .filter((e) => (activeBoard ? e.boardName === activeBoard.name : true))
+      .filter((e) => (onlyDone ? isEntryDone(e) : true))
       .filter((e) =>
         !q ? true : `${e.taskTitle} ${e.boardName} ${e.assignee} ${e.notes} ${e.stage}`.toLowerCase().includes(q)
       )
       .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
-  }, [journal, query, activeBoard]);
+  }, [journal, query, activeBoard, onlyDone, taskById]);
 
   const groups = useMemo(() => {
     const map = new Map<string, { sort: string; label: string; color?: string; entries: JournalEntry[] }>();
@@ -76,8 +100,26 @@ export default function JournalPage() {
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <PageHeader
           title="Журнал"
-          subtitle="Задачи автоматически попадают в журнал на этапе «Готов к тестированию»"
+          subtitle="Разработчик сдаёт задачу — она попадает в журнал. Когда задача готова, на записи появляется метка «Готово» и время по этапам."
         >
+          <button
+            onClick={() => setOnlyDone((v) => !v)}
+            className={cn(
+              "btn",
+              onlyDone
+                ? "bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30 dark:text-emerald-400"
+                : "btn-outline"
+            )}
+            title="Показать только выполненные — отчёт для тестировщика"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            <span className="hidden sm:inline">Отчёт QA</span>
+            {doneCount > 0 && (
+              <span className="rounded-full bg-emerald-500/20 px-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                {doneCount}
+              </span>
+            )}
+          </button>
           <button className="btn-primary" onClick={() => setExportOpen(true)}>
             <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
           </button>
@@ -160,7 +202,7 @@ export default function JournalPage() {
                     <colgroup>
                       <col className="w-[100px]" />
                       <col className="w-[120px]" />
-                      <col className="w-[120px]" />
+                      <col className="w-[168px]" />
                       <col className="w-[110px]" />
                       <col className="w-[22%]" />
                       <col className="w-[150px]" />
@@ -182,6 +224,10 @@ export default function JournalPage() {
                     <tbody>
                       {group.entries.map((e, i) => {
                         const board = boards.find((b) => b.name === e.boardName);
+                        const task = e.taskId ? taskById.get(e.taskId) : undefined;
+                        const done = task?.status === "done";
+                        const readySec = task?.stageTimes?.[READY_COLUMN_NAME] ?? 0;
+                        const reviewSec = task?.stageTimes?.[REVIEW_COLUMN_NAME] ?? 0;
                         return (
                           <tr
                             key={e.id}
@@ -201,13 +247,44 @@ export default function JournalPage() {
                               </span>
                             </Td>
                             <Td>
-                              {e.stage ? (
-                                <span className={cn("chip", STAGE_STYLE[e.stage] ?? "bg-surface-2 text-muted")}>
-                                  {e.stage}
-                                </span>
-                              ) : (
-                                <span className="text-muted">—</span>
-                              )}
+                              <div className="space-y-1.5">
+                                {e.stage ? (
+                                  <span className={cn("chip", STAGE_STYLE[e.stage] ?? "bg-surface-2 text-muted")}>
+                                    {e.stage}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted">—</span>
+                                )}
+                                {done && (
+                                  <div className="space-y-1">
+                                    <span className="chip bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                      <CheckCircle2 className="h-3 w-3" /> Готово
+                                    </span>
+                                    {(readySec > 0 || reviewSec > 0) && (
+                                      <div className="flex flex-col gap-0.5 text-[10px] text-muted">
+                                        {readySec > 0 && (
+                                          <span
+                                            className="inline-flex items-center gap-1"
+                                            title="Время в «Готов к тестированию»"
+                                          >
+                                            <FlaskConical className="h-3 w-3 text-sky-500" />
+                                            Готов: {formatDuration(readySec)}
+                                          </span>
+                                        )}
+                                        {reviewSec > 0 && (
+                                          <span
+                                            className="inline-flex items-center gap-1"
+                                            title="Время в «На проверке» (работа QA)"
+                                          >
+                                            <Search className="h-3 w-3 text-violet-500" />
+                                            Проверка: {formatDuration(reviewSec)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </Td>
                             <Td>
                               {e.taskId ? (

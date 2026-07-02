@@ -103,6 +103,24 @@ function appendLog(
   return { journal: [entry, ...journal], entry };
 }
 
+/**
+ * Ensure a task has its single «dev handoff» journal record. Completion is NOT
+ * a new entry — the «Готово» mark is derived from the task status in the UI.
+ * If the card reached done without ever passing «Готов к тестированию», create
+ * the record now so the finished work is still logged exactly once.
+ */
+function ensureDevRecord(
+  journal: JournalEntry[],
+  task: Task,
+  board: Board | undefined
+): { journal: JournalEntry[]; entry: JournalEntry | null } {
+  if (journal.some((j) => j.taskId === task.id && j.stage === READY_COLUMN_NAME)) {
+    return { journal, entry: null };
+  }
+  const entry = mkEntry(task, board, READY_COLUMN_NAME, buildNote(task, board, ""));
+  return { journal: [entry, ...journal], entry };
+}
+
 function uuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   // fallback
@@ -312,6 +330,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     );
     apply({ ...d, journal });
     if (userId) stale.forEach((j) => persist(db.updateJournalRow(j.id, { stage: READY_COLUMN_NAME })));
+  }, [ready, data.journal, userId, apply, persist]);
+
+  // One-time cleanup: «Готово» больше не отдельная запись — метка выводится из
+  // статуса задачи. Схлопываем старые «Готово»-записи в одну запись разработчика.
+  useEffect(() => {
+    if (!ready) return;
+    const d = dataRef.current;
+    const doneAuto = d.journal.filter((j) => j.taskId && j.stage === "Готово");
+    if (doneAuto.length === 0) return;
+    const hasReady = new Set(
+      d.journal.filter((j) => j.taskId && j.stage === READY_COLUMN_NAME).map((j) => j.taskId)
+    );
+    const toDelete = new Set<string>();
+    const toRename = new Set<string>();
+    const renamedTask = new Set<string | null>();
+    for (const j of doneAuto) {
+      if (hasReady.has(j.taskId) || renamedTask.has(j.taskId)) {
+        toDelete.add(j.id);
+      } else {
+        toRename.add(j.id);
+        renamedTask.add(j.taskId);
+      }
+    }
+    const journal = d.journal
+      .filter((j) => !toDelete.has(j.id))
+      .map((j) => (toRename.has(j.id) ? { ...j, stage: READY_COLUMN_NAME } : j));
+    apply({ ...d, journal });
+    if (userId) {
+      toDelete.forEach((id) => persist(db.deleteJournalRow(id)));
+      toRename.forEach((id) => persist(db.updateJournalRow(id, { stage: READY_COLUMN_NAME })));
+    }
   }, [ready, data.journal, userId, apply, persist]);
 
   // ---------------- Boards ----------------
@@ -558,7 +607,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       let logged: JournalEntry | null = null;
       if (changedColumn) {
-        const res = appendLog(journal, finalMoving, board, action);
+        // «Готово» не создаёт новую запись — только гарантирует запись разработчика
+        const res =
+          action === "done"
+            ? ensureDevRecord(journal, finalMoving, board)
+            : appendLog(journal, finalMoving, board, action);
         journal = res.journal;
         logged = res.entry;
       }
@@ -606,7 +659,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       let journal = d.journal;
       let journalEntry: JournalEntry | null = null;
       if (becomingDone) {
-        const res = appendLog(d.journal, updatedTask, board, "done");
+        const res = ensureDevRecord(d.journal, updatedTask, board);
         journal = res.journal;
         journalEntry = res.entry;
       } else {
@@ -790,7 +843,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
       const updated = { ...task, ...patch };
 
-      const { journal, entry } = appendLog(d.journal, updated, board, "done");
+      const { journal, entry } = ensureDevRecord(d.journal, updated, board);
 
       apply({
         ...d,
