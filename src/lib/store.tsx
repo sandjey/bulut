@@ -493,12 +493,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       let statusPatch: Partial<Task> = {};
       let action: JournalTrigger = "moved";
       let removeDoneFor: string | null = null;
+      let removeReadyFor: string | null = null;
 
       if (board) {
         const n = board.columns.length;
+        const readyIdx = n - 3;
         const doneCol = board.columns[n - 1]?.id;
         const reviewCol = board.columns[n - 2]?.id; // «На проверке» (QA)
-        const readyCol = board.columns[n - 3]?.id; // «Готов к тестированию» (dev handoff)
+        const readyCol = board.columns[readyIdx]?.id; // «Готов к тестированию» (dev handoff)
+        const toIdx = board.columns.findIndex((c) => c.id === toColumnId);
 
         if (toColumnId === doneCol && moving.status !== "done") {
           statusPatch = {
@@ -521,6 +524,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           // QA started testing — keep readiness, but don't double-log
           statusPatch = { readyAt: moving.readyAt ?? nowIso };
           action = "moved";
+        } else if (toIdx >= 0 && toIdx < readyIdx && moving.readyAt) {
+          // карточку вернули из «Готов к тестированию»/«На проверке» назад в работу —
+          // она больше не готова: убираем отметку и её запись из журнала
+          statusPatch = { readyAt: null };
+          removeReadyFor = moving.id;
+          action = "moved";
         }
       }
 
@@ -542,6 +551,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       let journal = removeDoneFor
         ? d.journal.filter((j) => j.taskId !== removeDoneFor)
         : d.journal;
+      if (removeReadyFor) {
+        journal = journal.filter(
+          (j) => !(j.taskId === removeReadyFor && j.stage === READY_COLUMN_NAME)
+        );
+      }
       let logged: JournalEntry | null = null;
       if (changedColumn) {
         const res = appendLog(journal, finalMoving, board, action);
@@ -556,6 +570,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         persist(db.upsertTasks(affected, userId));
         if (logged) persist(db.insertJournal(logged, userId));
         if (removeDoneFor) persist(db.deleteJournalByTask(removeDoneFor));
+        if (removeReadyFor) persist(db.deleteJournalByTask(removeReadyFor));
       }
     },
     [apply, persist, userId]
@@ -822,8 +837,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         createdAt: nowIso,
       };
 
-      // remove any done entry, then log the return action (with reason as note)
-      const baseJournal = d.journal.filter((j) => !(j.taskId === id && j.stage === "Готово"));
+      // returning to work — drop its «Готово»/«Готов к тестированию» entries,
+      // then log the return action (with reason as note)
+      const hadLogged = d.journal.some(
+        (j) => j.taskId === id && (j.stage === "Готово" || j.stage === READY_COLUMN_NAME)
+      );
+      const baseJournal = d.journal.filter(
+        (j) => !(j.taskId === id && (j.stage === "Готово" || j.stage === READY_COLUMN_NAME))
+      );
       const { journal, entry } = appendLog(baseJournal, updated, board, "returned", reason.trim());
 
       apply({
@@ -834,7 +855,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
       persist(db.updateTaskRow(id, patch));
       if (userId && reason.trim()) persist(db.insertComment(comment, userId));
-      if (task.status === "done") persist(db.deleteJournalByTask(id));
+      if (hadLogged) persist(db.deleteJournalByTask(id));
       if (userId && entry) persist(db.insertJournal(entry, userId));
     },
     [apply, persist, userId]
