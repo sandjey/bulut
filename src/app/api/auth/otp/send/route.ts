@@ -31,15 +31,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const code = generateCode();
-  const ticket = issueTicket(email, name, role, code);
+  // Проверяем, что сервер настроен (секрет подписи + SMTP из Infisical).
+  if (!process.env.OTP_SIGNING_SECRET || process.env.OTP_SIGNING_SECRET.length < 16) {
+    console.error("OTP_SIGNING_SECRET не задан в окружении");
+    return Response.json(
+      { error: "Регистрация не настроена на сервере (нет ключа подписи). Обратитесь к администратору." },
+      { status: 500 },
+    );
+  }
 
+  let ticket: string;
   try {
+    const code = generateCode();
+    ticket = issueTicket(email, name, role, code);
     await sendOtpEmail(email, code, name);
   } catch (e) {
     console.error("OTP send failed:", e);
     return Response.json(
-      { error: "Не удалось отправить письмо. Проверьте адрес и попробуйте снова." },
+      {
+        error:
+          "Не удалось отправить письмо. Проверьте настройки почты (Infisical/SMTP) на сервере или адрес.",
+      },
       { status: 502 },
     );
   }

@@ -43,6 +43,12 @@ export type PermissionKey =
   // Команда
   | "team.view"
   | "team.manage"
+  // Bulut MAP (карты проекта)
+  | "map.view"
+  | "map.create"
+  | "map.edit"
+  | "map.delete"
+  | "map.export"
   // Администрирование
   | "admin.access";
 
@@ -103,6 +109,18 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     permissions: [
       { key: "team.view", label: "Просмотр команды", hint: "Открывать раздел «Команда»" },
       { key: "team.manage", label: "Управление участниками", hint: "Добавлять, менять и удалять участников" },
+    ],
+  },
+  {
+    title: "Bulut MAP",
+    icon: "Waypoints",
+    color: "#14b8a6",
+    permissions: [
+      { key: "map.view", label: "Просмотр карт", hint: "Открывать раздел «Bulut MAP» и карты проекта" },
+      { key: "map.create", label: "Создание карт", hint: "Создавать новые карты проекта" },
+      { key: "map.edit", label: "Редактирование карт", hint: "Добавлять узлы и связи, менять свойства" },
+      { key: "map.delete", label: "Удаление карт", hint: "Удалять карты целиком" },
+      { key: "map.export", label: "Экспорт карт", hint: "Выгружать карту (PNG/JSON)" },
     ],
   },
   {

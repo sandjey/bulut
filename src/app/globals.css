@@ -392,3 +392,78 @@ body {
   }
   .hover-lift:hover { transform: none; }
 }
+
+/* ============================================================
+   Bulut MAP — тема React Flow под стиль приложения
+   ============================================================ */
+.bulut-flow {
+  --xy-background-color: rgb(var(--bg));
+  --xy-edge-stroke-default: rgb(var(--border-strong));
+  --xy-edge-stroke-selected-default: rgb(var(--brand));
+  --xy-connectionline-stroke-default: rgb(var(--brand));
+  background: rgb(var(--bg));
+}
+.bulut-flow .react-flow__handle {
+  width: 9px;
+  height: 9px;
+  background: rgb(var(--surface));
+  border: 1.5px solid rgb(var(--border-strong));
+  border-radius: 9999px;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.bulut-flow .react-flow__handle:hover,
+.bulut-flow .react-flow__handle-connecting {
+  border-color: rgb(var(--brand));
+  background: rgb(var(--brand));
+  transform: scale(1.15);
+}
+.bulut-flow .react-flow__edge-path {
+  stroke-width: 2;
+}
+.bulut-flow .react-flow__edge.selected .react-flow__edge-path,
+.bulut-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke: rgb(var(--brand));
+}
+.bulut-flow .react-flow__edge-text {
+  fill: rgb(var(--fg));
+  font-size: 11px;
+  font-weight: 600;
+}
+.bulut-flow .react-flow__edge-textbg {
+  fill: rgb(var(--surface));
+}
+/* Controls */
+.bulut-flow .react-flow__controls {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgb(var(--border));
+}
+.bulut-flow .react-flow__controls-button {
+  background: rgb(var(--surface));
+  border-bottom: 1px solid rgb(var(--border));
+  color: rgb(var(--muted));
+  width: 30px;
+  height: 30px;
+}
+.bulut-flow .react-flow__controls-button:hover {
+  background: rgb(var(--surface-2));
+  color: rgb(var(--fg));
+}
+.bulut-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+/* MiniMap */
+.bulut-flow .react-flow__minimap {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface));
+}
+.bulut-flow .react-flow__attribution {
+  background: transparent;
+  color: rgb(var(--faint));
+  font-size: 10px;
+}
+.bulut-flow .react-flow__attribution a { color: rgb(var(--faint)); }

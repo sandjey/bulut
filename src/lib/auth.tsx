@@ -79,11 +79,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim(), name: name.trim(), role }),
         });
-        const data = await res.json();
-        if (!res.ok) return { error: data.error ?? "Не удалось отправить код" };
-        return { error: null, ticket: data.ticket };
+        const data = await safeJson(res);
+        if (!res.ok) {
+          return {
+            error:
+              data?.error ??
+              `Сервер вернул ошибку (${res.status}). Проверьте настройки регистрации на сервере.`,
+          };
+        }
+        return { error: null, ticket: data?.ticket };
       } catch {
-        return { error: "Ошибка сети. Попробуйте ещё раз." };
+        return { error: "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова." };
       }
     },
     [],
@@ -102,17 +108,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!supabase) return { error: "Supabase не настроен" };
 
       // 1) Проверяем OTP-код на сервере (почта подтверждена).
-      let verified: { ok?: boolean; error?: string };
       try {
         const res = await fetch("/api/auth/otp/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim(), code: code.trim(), ticket }),
         });
-        verified = await res.json();
-        if (!res.ok) return { error: verified.error ?? "Неверный код" };
+        const verified = await safeJson(res);
+        if (!res.ok) return { error: verified?.error ?? `Ошибка проверки кода (${res.status})` };
       } catch {
-        return { error: "Ошибка сети. Попробуйте ещё раз." };
+        return { error: "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова." };
       }
 
       // 2) Создаём аккаунт в Supabase (проект в режиме autoconfirm → сразу сессия).
@@ -160,6 +165,15 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
+}
+
+/** Безопасно парсит JSON-ответ: если сервер вернул не-JSON (напр. 500 HTML), не падаем. */
+async function safeJson(res: Response): Promise<{ error?: string; ticket?: string; [k: string]: unknown } | null> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 function translateError(msg: string): string {

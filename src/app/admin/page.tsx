@@ -15,6 +15,7 @@ import {
   BookOpenText,
   FileBarChart,
   Users,
+  Waypoints,
   ChevronRight,
 } from "lucide-react";
 import { useAccess } from "@/lib/access";
@@ -35,6 +36,7 @@ const GROUP_ICONS: Record<string, typeof ShieldCheck> = {
   BookOpenText,
   FileBarChart,
   Users,
+  Waypoints,
   ShieldCheck,
 };
 

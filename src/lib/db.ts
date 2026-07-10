@@ -15,6 +15,7 @@ import {
   Member,
 } from "./types";
 import type { AppRole, PermissionKey, Profile } from "./permissions";
+import type { ProjectMap, MapGraph } from "./map-types";
 
 // ---------- Row types (snake_case, as stored in Postgres) ----------
 interface BoardRow {
@@ -439,5 +440,71 @@ export async function updateProfileRole(id: string, role: AppRole, permissions?:
 
 export async function deleteProfile(id: string) {
   const { error } = await client().from("profiles").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ---------- Project maps (Bulut MAP) ----------
+interface ProjectMapRow {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  color: string;
+  graph: MapGraph;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+const toMap = (r: ProjectMapRow): ProjectMap => ({
+  id: r.id,
+  name: r.name,
+  description: r.description ?? "",
+  color: r.color ?? "#6366f1",
+  graph: r.graph ?? { nodes: [], edges: [] },
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export async function fetchProjectMaps(): Promise<ProjectMap[]> {
+  const { data, error } = await client()
+    .from("project_maps")
+    .select("*")
+    .order("position", { ascending: true });
+  if (error) throw error;
+  return (data as ProjectMapRow[]).map(toMap);
+}
+
+export async function insertProjectMap(
+  m: { id: string; name: string; color: string; graph: MapGraph },
+  userId: string,
+  position: number,
+) {
+  const { error } = await client().from("project_maps").insert({
+    id: m.id,
+    user_id: userId,
+    name: m.name,
+    color: m.color,
+    graph: m.graph,
+    position,
+  });
+  if (error) throw error;
+}
+
+export async function updateProjectMapRow(
+  id: string,
+  patch: Partial<Pick<ProjectMap, "name" | "description" | "color" | "graph">>,
+) {
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.description !== undefined) row.description = patch.description;
+  if (patch.color !== undefined) row.color = patch.color;
+  if (patch.graph !== undefined) row.graph = patch.graph;
+  const { error } = await client().from("project_maps").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteProjectMapRow(id: string) {
+  const { error } = await client().from("project_maps").delete().eq("id", id);
   if (error) throw error;
 }
