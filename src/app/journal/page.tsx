@@ -15,7 +15,9 @@ import {
   CornerUpLeft,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
+import { RequirePerm } from "@/components/RequirePerm";
 import { ExportModal } from "@/components/ExportModal";
 import { Avatar } from "@/components/Avatar";
 import { AssigneePicker } from "@/components/AssigneePicker";
@@ -45,7 +47,19 @@ const STAGE_STYLE: Record<string, string> = {
 };
 
 export default function JournalPage() {
+  return (
+    <RequirePerm perm="journal.view" title="Нет доступа к журналу">
+      <JournalPageInner />
+    </RequirePerm>
+  );
+}
+
+function JournalPageInner() {
   const { journal, boards, tasks, addJournalEntry, updateJournalEntry, deleteJournalEntry } = useStore();
+  const can = useCan();
+  const canEdit = can("journal.edit");
+  const canDelete = can("journal.delete");
+  const canExport = can("journal.export");
   const [groupBy, setGroupBy] = useState<GroupMode>("day");
   const [query, setQuery] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
@@ -123,13 +137,17 @@ export default function JournalPage() {
               </span>
             )}
           </button>
-          <button className="btn-primary" onClick={() => setExportOpen(true)}>
-            <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
-          </button>
+          {canExport && (
+            <button className="btn-primary" onClick={() => setExportOpen(true)}>
+              <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
+            </button>
+          )}
         </PageHeader>
 
         {/* Быстрое добавление */}
-        <QuickAdd boards={boards} lockedBoard={activeBoard?.name} onAdd={addJournalEntry} />
+        {canEdit && (
+          <QuickAdd boards={boards} lockedBoard={activeBoard?.name} onAdd={addJournalEntry} />
+        )}
 
         {/* controls */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -327,19 +345,22 @@ export default function JournalPage() {
                             <Td className="p-0">
                               <NotesCell
                                 value={e.notes}
+                                readOnly={!canEdit}
                                 onCommit={(v) => {
                                   if (v !== e.notes) updateJournalEntry(e.id, { notes: v });
                                 }}
                               />
                             </Td>
                             <td className="border-b border-border px-1 text-center align-top">
-                              <button
-                                onClick={() => deleteJournalEntry(e.id)}
-                                className="mt-1.5 rounded p-1 text-muted opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
-                                title="Удалить"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                              {canDelete && (
+                                <button
+                                  onClick={() => deleteJournalEntry(e.id)}
+                                  className="mt-1.5 rounded p-1 text-muted opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+                                  title="Удалить"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -501,7 +522,15 @@ function Td({ children, className }: { children: React.ReactNode; className?: st
   );
 }
 
-function NotesCell({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function NotesCell({
+  value,
+  onCommit,
+  readOnly,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  readOnly?: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -524,6 +553,7 @@ function NotesCell({ value, onCommit }: { value: string; onCommit: (v: string) =
   };
 
   const startEditing = () => {
+    if (readOnly) return;
     setEditing(true);
     setExpanded(true);
     setTimeout(() => {
@@ -551,6 +581,7 @@ function NotesCell({ value, onCommit }: { value: string; onCommit: (v: string) =
   }
 
   if (!value) {
+    if (readOnly) return <div className="px-3 py-2.5 text-sm text-muted/40">—</div>;
     return (
       <button
         onClick={startEditing}

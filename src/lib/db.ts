@@ -14,6 +14,7 @@ import {
   CommentKind,
   Member,
 } from "./types";
+import type { AppRole, PermissionKey, Profile } from "./permissions";
 
 // ---------- Row types (snake_case, as stored in Postgres) ----------
 interface BoardRow {
@@ -382,5 +383,61 @@ export async function deleteJournalRow(id: string) {
 
 export async function deleteJournalByTask(taskId: string) {
   const { error } = await client().from("journal").delete().eq("task_id", taskId);
+  if (error) throw error;
+}
+
+// ---------- Profiles (роли и права) ----------
+interface ProfileRow {
+  id: string;
+  email: string;
+  name: string;
+  job_role: string;
+  role: AppRole;
+  permissions: string[];
+  created_at: string;
+}
+
+const toProfile = (r: ProfileRow): Profile => ({
+  id: r.id,
+  email: r.email ?? "",
+  name: r.name ?? "",
+  jobRole: r.job_role ?? "",
+  role: (r.role ?? "member") as AppRole,
+  permissions: (r.permissions ?? []) as PermissionKey[],
+  createdAt: r.created_at,
+});
+
+/** Все профили (для раздела администрирования и команды). */
+export async function fetchProfiles(): Promise<Profile[]> {
+  const { data, error } = await client()
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data as ProfileRow[]).map(toProfile);
+}
+
+export async function updateProfilePermissions(id: string, permissions: PermissionKey[]) {
+  const { error } = await client().from("profiles").update({ permissions }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateProfileFields(id: string, patch: { name?: string; jobRole?: string }) {
+  const row: Record<string, unknown> = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.jobRole !== undefined) row.job_role = patch.jobRole;
+  const { error } = await client().from("profiles").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateProfileRole(id: string, role: AppRole, permissions?: PermissionKey[]) {
+  const row: Record<string, unknown> = { role };
+  if (permissions !== undefined) row.permissions = permissions;
+  const { error } = await client().from("profiles").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteProfile(id: string) {
+  const { error } = await client().from("profiles").delete().eq("id", id);
   if (error) throw error;
 }

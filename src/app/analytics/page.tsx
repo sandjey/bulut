@@ -17,6 +17,7 @@ import {
 import { CheckCircle2, Clock, AlertTriangle, TrendingUp } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useTheme } from "@/components/ThemeProvider";
+import { RequirePerm } from "@/components/RequirePerm";
 import { PageHeader } from "@/components/PageHeader";
 import { Avatar } from "@/components/Avatar";
 import { todayISO, format } from "@/lib/date";
@@ -25,6 +26,14 @@ import { subDays } from "date-fns";
 import { ru } from "date-fns/locale";
 
 export default function AnalyticsPage() {
+  return (
+    <RequirePerm perm="analytics.view" title="Нет доступа к аналитике">
+      <AnalyticsPageInner />
+    </RequirePerm>
+  );
+}
+
+function AnalyticsPageInner() {
   const { boards, tasks, journal } = useStore();
   const { theme } = useTheme();
   const axisColor = theme === "dark" ? "#94a3b8" : "#64748b";

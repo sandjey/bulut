@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, UserPlus, User, X, Users } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { useStore } from "@/lib/store";
+import { useTeam } from "@/lib/team";
 import { cn } from "@/lib/utils";
 
 interface AssigneePickerProps {
@@ -19,7 +20,8 @@ export function AssigneePicker({
   compact = false,
   placeholder = "Выберите исполнителя",
 }: AssigneePickerProps) {
-  const { members, addMember } = useStore();
+  const { addMember } = useStore();
+  const team = useTeam();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -32,20 +34,15 @@ export function AssigneePicker({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const sorted = useMemo(
-    () => [...members].sort((a, b) => a.name.localeCompare(b.name, "ru")),
-    [members]
-  );
-
   const q = query.trim().toLowerCase();
-  const filtered = sorted.filter(
-    (m) => m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)
+  const filtered = useMemo(
+    () => team.filter((m) => m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)),
+    [team, q]
   );
-  const exactExists = members.some((m) => m.name.toLowerCase() === q);
+  const exactExists = team.some((m) => m.name.toLowerCase() === q);
   const canCreate = query.trim().length > 0 && !exactExists;
 
-  const current = members.find((m) => m.name === value);
-  const valueIsKnown = !!current;
+  const valueIsKnown = team.some((m) => m.name === value);
 
   const pick = (name: string) => {
     onChange(name);
@@ -129,14 +126,19 @@ export function AssigneePicker({
           <div className="max-h-60 overflow-y-auto py-1">
             {filtered.map((m) => (
               <button
-                key={m.id}
+                key={m.key}
                 type="button"
                 onClick={() => pick(m.name)}
                 className="flex w-full items-center gap-2.5 px-2 py-1.5 text-sm transition hover:bg-surface-2"
               >
                 <Avatar name={m.name} size={26} />
                 <span className="min-w-0 flex-1 text-left">
-                  <span className="block truncate font-medium">{m.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate font-medium">{m.name}</span>
+                    {m.isAccount && (
+                      <span className="rounded bg-brand/10 px-1 text-[10px] font-medium text-brand">аккаунт</span>
+                    )}
+                  </span>
                   {m.role && <span className="block truncate text-xs text-muted">{m.role}</span>}
                 </span>
                 {value === m.name && <Check className="h-4 w-4 text-brand" />}
@@ -157,7 +159,7 @@ export function AssigneePicker({
             {filtered.length === 0 && !canCreate && (
               <div className="px-3 py-4 text-center text-xs text-muted">
                 <Users className="mx-auto mb-1 h-5 w-5 opacity-50" />
-                {members.length === 0
+                {team.length === 0
                   ? "В команде пока нет участников. Введите имя, чтобы добавить."
                   : "Не найдено"}
               </div>

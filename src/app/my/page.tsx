@@ -5,6 +5,7 @@ import Link from "next/link";
 import { UserCircle2, AlarmClock, CalendarClock, CalendarDays, Inbox, CheckCircle2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useMe } from "@/lib/me";
+import { RequirePerm } from "@/components/RequirePerm";
 import { PageHeader } from "@/components/PageHeader";
 import { TypeBadge } from "@/components/TypeBadge";
 import { PriorityDot } from "@/components/PriorityDot";
@@ -17,6 +18,14 @@ import { Task } from "@/lib/types";
 import { parseISO, isValid, differenceInCalendarDays } from "date-fns";
 
 export default function MyTasksPage() {
+  return (
+    <RequirePerm perm="board.view" title="Нет доступа к задачам">
+      <MyTasksPageInner />
+    </RequirePerm>
+  );
+}
+
+function MyTasksPageInner() {
   const { tasks, boards } = useStore();
   const [me, setMe] = useMe();
 

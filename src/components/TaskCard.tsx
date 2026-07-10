@@ -18,6 +18,7 @@ import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
 import { Board, Task } from "@/lib/types";
 import { useStore, doneColumnId, columnRole } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { PriorityDot } from "./PriorityDot";
 import { DeadlineBadge } from "./DeadlineBadge";
 import { TypeBadge } from "./TypeBadge";
@@ -35,6 +36,10 @@ interface TaskCardProps {
 
 export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: TaskCardProps) {
   const { toggleDone, updateTask, comments } = useStore();
+  const can = useCan();
+  const canEdit = can("card.edit");
+  const canStatus = can("card.status");
+  const canMove = can("card.move");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.title);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -86,9 +91,13 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
 
       <div className="flex items-start gap-2 pl-1.5">
         <button
-          onClick={() => toggleDone(task.id, doneColumnId(board))}
-          className="mt-0.5 shrink-0 text-muted transition hover:text-emerald-500"
-          title={done ? "Вернуть в работу" : "Выполнено"}
+          onClick={() => canStatus && toggleDone(task.id, doneColumnId(board))}
+          disabled={!canStatus}
+          className={cn(
+            "mt-0.5 shrink-0 text-muted transition",
+            canStatus ? "hover:text-emerald-500" : "cursor-default",
+          )}
+          title={!canStatus ? "" : done ? "Вернуть в работу" : "Выполнено"}
         >
           {done ? (
             <CheckCircle2 className="h-[18px] w-[18px] text-emerald-500" />
@@ -118,7 +127,7 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
             />
           ) : (
             <p
-              onDoubleClick={() => setEditing(true)}
+              onDoubleClick={() => canEdit && setEditing(true)}
               onClick={onOpen}
               className={cn(
                 "cursor-pointer text-sm font-medium leading-snug",
@@ -209,14 +218,16 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
         </div>
 
         {/* drag handle */}
-        <button
-          {...dragHandleProps}
-          className="absolute right-1 top-1 cursor-grab rounded p-1 text-muted opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
-          tabIndex={-1}
-          aria-label="Перетащить"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+        {canMove && (
+          <button
+            {...dragHandleProps}
+            className="absolute right-1 top-1 cursor-grab rounded p-1 text-muted opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
+            tabIndex={-1}
+            aria-label="Перетащить"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
       </div>
     </div>
   );

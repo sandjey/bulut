@@ -3,6 +3,7 @@ import { Onest } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth";
+import { AccessProvider } from "@/lib/access";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppShell } from "@/components/AppShell";
 import { AuthGate } from "@/components/AuthGate";
@@ -44,9 +45,11 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             <AuthGate>
-              <StoreProvider>
-                <AppShell>{children}</AppShell>
-              </StoreProvider>
+              <AccessProvider>
+                <StoreProvider>
+                  <AppShell>{children}</AppShell>
+                </StoreProvider>
+              </AccessProvider>
             </AuthGate>
           </AuthProvider>
         </ThemeProvider>

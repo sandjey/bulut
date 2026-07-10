@@ -16,6 +16,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useStore, columnRole, reviewColumnId } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { Board } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { AssigneePicker } from "./AssigneePicker";
@@ -26,6 +27,9 @@ import { cn } from "@/lib/utils";
 export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }) {
   const { tasks, comments, sendToReview, acceptTask, returnTask, toggleDone, addComment, deleteComment, moveTask } =
     useStore();
+  const can = useCan();
+  const canStatus = can("card.status");
+  const canComment = can("card.comment");
   const task = tasks.find((t) => t.id === taskId);
 
   const [returning, setReturning] = useState(false);
@@ -159,6 +163,7 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
       )}
 
       {/* Workflow actions */}
+      {canStatus && (
       <div className="flex flex-wrap gap-2">
         {/* dev handoff → «Готов к тестированию» (пишется в журнал) */}
         {(role === "todo" || role === "progress") && (
@@ -212,9 +217,10 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
           )
         )}
       </div>
+      )}
 
       {/* Return form */}
-      {returning && (
+      {canStatus && returning && (
         <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/5 p-3 animate-slide-up">
           <div className="flex items-center gap-2 text-sm font-medium text-red-600 dark:text-red-400">
             <CornerUpLeft className="h-4 w-4" /> Причина возврата
@@ -255,6 +261,7 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
         </span>
 
         {/* composer */}
+        {canComment && (
         <div className="mb-3 flex gap-2">
           <div className="w-44 shrink-0">
             <AssigneePicker value={commentAuthor} onChange={setCommentAuthor} placeholder="Кто" />
@@ -270,6 +277,7 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
             <Plus className="h-4 w-4" />
           </button>
         </div>
+        )}
 
         {/* list */}
         <div className="space-y-2">
@@ -296,12 +304,14 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
                     </span>
                   )}
                   <span className="text-xs text-muted">{fmtDateTime(c.createdAt)}</span>
-                  <button
-                    onClick={() => deleteComment(c.id)}
-                    className="ml-auto rounded p-1 text-muted opacity-0 transition hover:text-red-500 group-hover:opacity-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {canComment && (
+                    <button
+                      onClick={() => deleteComment(c.id)}
+                      className="ml-auto rounded p-1 text-muted opacity-0 transition hover:text-red-500 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed">{renderMentions(c.text)}</p>
               </div>

@@ -6,10 +6,12 @@ import Link from "next/link";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import { Plus, Download, ArrowLeft, Pencil, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { BoardColumn } from "@/components/BoardColumn";
 import { TaskModal } from "@/components/TaskModal";
 import { FilterBar } from "@/components/FilterBar";
 import { ExportModal } from "@/components/ExportModal";
+import { RequirePerm } from "@/components/RequirePerm";
 import { Task, BOARD_COLORS } from "@/lib/types";
 import { applyFilters, DEFAULT_FILTERS, FilterState } from "@/lib/filters";
 
@@ -22,7 +24,9 @@ export default function BoardPage() {
         </div>
       }
     >
-      <BoardPageInner />
+      <RequirePerm perm="board.view" title="Нет доступа к доскам">
+        <BoardPageInner />
+      </RequirePerm>
     </Suspense>
   );
 }
@@ -34,6 +38,11 @@ function BoardPageInner() {
   const boardId = params.id as string;
 
   const { boards, tasks, moveTask, addColumn, updateBoard, createTask } = useStore();
+  const can = useCan();
+  const canManage = can("board.manage");
+  const canCreate = can("card.create");
+  const canMove = can("card.move");
+  const canExport = can("reports.export");
   const board = boards.find((b) => b.id === boardId);
 
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -86,6 +95,7 @@ function BoardPageInner() {
   };
 
   const onDragEnd = (result: DropResult) => {
+    if (!canMove) return;
     const { destination, draggableId } = result;
     if (!destination) return;
     moveTask(draggableId, destination.droppableId, destination.index);
@@ -129,7 +139,7 @@ function BoardPageInner() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <span className="h-4 w-4 rounded-full" style={{ backgroundColor: board.color }} />
-          {editingName ? (
+          {editingName && canManage ? (
             <div className="flex items-center gap-1">
               <input
                 autoFocus
@@ -146,7 +156,7 @@ function BoardPageInner() {
                 <Check className="h-4 w-4" />
               </button>
             </div>
-          ) : (
+          ) : canManage ? (
             <button
               onClick={() => {
                 setNameDraft(board.name);
@@ -157,6 +167,8 @@ function BoardPageInner() {
               <h1 className="text-xl font-bold tracking-tight">{board.name}</h1>
               <Pencil className="h-4 w-4 text-muted opacity-0 transition group-hover:opacity-100" />
             </button>
+          ) : (
+            <h1 className="text-xl font-bold tracking-tight">{board.name}</h1>
           )}
 
           <span className="text-sm text-muted">
@@ -164,30 +176,36 @@ function BoardPageInner() {
           </span>
 
           {/* color picker */}
-          <div className="hidden items-center gap-1.5 sm:flex">
-            {BOARD_COLORS.slice(0, 6).map((c) => (
-              <button
-                key={c}
-                onClick={() => updateBoard(board.id, { color: c })}
-                className="h-4 w-4 rounded-full transition hover:scale-125"
-                style={{
-                  backgroundColor: c,
-                  outline: board.color === c ? `2px solid ${c}` : "none",
-                  outlineOffset: 2,
-                }}
-              />
-            ))}
-          </div>
+          {canManage && (
+            <div className="hidden items-center gap-1.5 sm:flex">
+              {BOARD_COLORS.slice(0, 6).map((c) => (
+                <button
+                  key={c}
+                  onClick={() => updateBoard(board.id, { color: c })}
+                  className="h-4 w-4 rounded-full transition hover:scale-125"
+                  style={{
+                    backgroundColor: c,
+                    outline: board.color === c ? `2px solid ${c}` : "none",
+                    outlineOffset: 2,
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
-            <button className="btn-outline" onClick={() => setExportOpen(true)}>
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Экспорт</span>
-            </button>
-            <button className="btn-primary" onClick={() => openCreate(board.columns[0].id)}>
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Задача</span>
-            </button>
+            {canExport && (
+              <button className="btn-outline" onClick={() => setExportOpen(true)}>
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Экспорт</span>
+              </button>
+            )}
+            {canCreate && (
+              <button className="btn-primary" onClick={() => openCreate(board.columns[0].id)}>
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Задача</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -215,6 +233,7 @@ function BoardPageInner() {
           ))}
 
           {/* add column */}
+          {canManage && (
           <div className="w-[300px] shrink-0">
             {addingCol ? (
               <div className="card p-2">
@@ -240,6 +259,7 @@ function BoardPageInner() {
               </button>
             )}
           </div>
+          )}
         </div>
       </DragDropContext>
 

@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { addDays, addWeeks, addMonths } from "date-fns";
 import { useStore } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
+import { RequirePerm } from "@/components/RequirePerm";
 import { Avatar } from "@/components/Avatar";
 import { TypeBadge } from "@/components/TypeBadge";
 import { DeadlineBadge } from "@/components/DeadlineBadge";
@@ -36,7 +38,16 @@ import { cn } from "@/lib/utils";
 type Tab = "people" | "load" | "summary";
 
 export default function ReportsPage() {
+  return (
+    <RequirePerm perm="reports.view" title="Нет доступа к отчётам">
+      <ReportsPageInner />
+    </RequirePerm>
+  );
+}
+
+function ReportsPageInner() {
   const { boards, tasks, journal, members } = useStore();
+  const canExport = useCan()("reports.export");
   const [period, setPeriod] = useState<Period>("week");
   const [ref, setRef] = useState<Date>(() => new Date());
   const [tab, setTab] = useState<Tab>("people");
@@ -85,9 +96,11 @@ export default function ReportsPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <PageHeader title="Отчёты" subtitle="Кто что делает — по дням, неделям и месяцам">
-          <button className="btn-primary" onClick={doExport}>
-            <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
-          </button>
+          {canExport && (
+            <button className="btn-primary" onClick={doExport}>
+              <Download className="h-4 w-4" /> <span className="hidden sm:inline">Скачать Excel</span>
+            </button>
+          )}
         </PageHeader>
 
         {/* Period controls */}

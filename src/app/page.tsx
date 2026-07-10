@@ -4,15 +4,26 @@ import { useMemo, useState } from "react";
 import { Plus, LayoutDashboard, CheckCircle2, Clock, AlertTriangle, Sparkles } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { useCan } from "@/lib/access";
 import { BoardCard } from "@/components/BoardCard";
 import { CreateBoardDialog } from "@/components/CreateBoardDialog";
+import { RequirePerm } from "@/components/RequirePerm";
 import { StatWidget } from "@/components/StatWidget";
 import { todayISO, fmtDate } from "@/lib/date";
 import { isTaskOverdue } from "@/lib/deadlines";
 
 export default function HomePage() {
+  return (
+    <RequirePerm perm="board.view" title="Нет доступа к доскам">
+      <HomePageInner />
+    </RequirePerm>
+  );
+}
+
+function HomePageInner() {
   const { boards, tasks } = useStore();
   const { user } = useAuth();
+  const canManage = useCan()("board.manage");
   const [createOpen, setCreateOpen] = useState(false);
 
   const stats = useMemo(() => {
@@ -48,9 +59,11 @@ export default function HomePage() {
                   : "Все задачи закрыты — отличная работа!"}
               </p>
             </div>
-            <button className="btn-primary shrink-0 px-5 py-2.5 text-base" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-5 w-5" /> Новая доска
-            </button>
+            {canManage && (
+              <button className="btn-primary shrink-0 px-5 py-2.5 text-base" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-5 w-5" /> Новая доска
+              </button>
+            )}
           </div>
         </div>
 
@@ -74,23 +87,29 @@ export default function HomePage() {
               <LayoutDashboard className="h-7 w-7" />
             </div>
             <h3 className="mt-4 text-lg font-semibold">Пока нет досок</h3>
-            <p className="mt-1 max-w-sm text-sm text-muted">Создайте первую доску, чтобы начать.</p>
-            <button className="btn-primary mt-5" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> Создать доску
-            </button>
+            <p className="mt-1 max-w-sm text-sm text-muted">
+              {canManage ? "Создайте первую доску, чтобы начать." : "Доски ещё не созданы."}
+            </p>
+            {canManage && (
+              <button className="btn-primary mt-5" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" /> Создать доску
+              </button>
+            )}
           </div>
         ) : (
           <div className="stagger mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {boards.map((b) => (
               <BoardCard key={b.id} board={b} tasks={tasks} />
             ))}
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="hover-lift flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border text-muted hover:border-brand hover:text-brand"
-            >
-              <Plus className="h-7 w-7" />
-              <span className="text-sm font-medium">Новая доска</span>
-            </button>
+            {canManage && (
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="hover-lift flex min-h-[180px] flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border text-muted hover:border-brand hover:text-brand"
+              >
+                <Plus className="h-7 w-7" />
+                <span className="text-sm font-medium">Новая доска</span>
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ import { TaskExtras } from "./TaskExtras";
 import { PhotoUploader } from "./PhotoUploader";
 import { AutoTextarea } from "./AutoTextarea";
 import { useStore } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import {
   Board,
   Priority,
@@ -35,7 +36,14 @@ interface TaskModalProps {
 
 export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskModalProps) {
   const { tasks, createTask, updateTask, deleteTask } = useStore();
+  const can = useCan();
   const editing = !!task;
+  const canEdit = can("card.edit");
+  const canCreate = can("card.create");
+  const canDelete = can("card.delete");
+  // В режиме редактирования поля доступны при праве card.edit; при создании — card.create.
+  const fieldsDisabled = editing ? !canEdit : !canCreate;
+  const canSave = editing ? canEdit : canCreate;
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -121,25 +129,30 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       footer={
         <div className="flex w-full items-center justify-between">
           <div>
-            {editing && (
+            {editing && canDelete && (
               <button className="btn-ghost text-red-500 hover:bg-red-500/10" onClick={handleDelete}>
                 <Trash2 className="h-4 w-4" />
                 Удалить
               </button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {!canSave && (
+              <span className="text-xs text-muted">Только просмотр</span>
+            )}
             <button className="btn-outline" onClick={onClose}>
-              Отмена
+              {canSave ? "Отмена" : "Закрыть"}
             </button>
-            <button className="btn-primary" onClick={save} disabled={!title.trim()}>
-              {editing ? "Сохранить" : "Создать"}
-            </button>
+            {canSave && (
+              <button className="btn-primary" onClick={save} disabled={!title.trim()}>
+                {editing ? "Сохранить" : "Создать"}
+              </button>
+            )}
           </div>
         </div>
       }
     >
-      <div className="space-y-4">
+      <fieldset disabled={fieldsDisabled} className="space-y-4 border-0 p-0 disabled:opacity-90">
         {editing && task?.createdBy && (
           <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted">
             <UserPlus className="h-3.5 w-3.5 text-brand" />
@@ -276,25 +289,25 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
           <label className="label">Теги</label>
           <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
         </div>
+      </fieldset>
 
-        {editing && task && (
-          <div className="border-t border-border pt-4">
-            <PhotoUploader taskId={task.id} />
-          </div>
-        )}
+      {editing && task && canEdit && (
+        <div className="mt-4 border-t border-border pt-4">
+          <PhotoUploader taskId={task.id} />
+        </div>
+      )}
 
-        {editing && task && (
-          <div className="border-t border-border pt-4">
-            <TaskExtras taskId={task.id} />
-          </div>
-        )}
+      {editing && task && canEdit && (
+        <div className="mt-4 border-t border-border pt-4">
+          <TaskExtras taskId={task.id} />
+        </div>
+      )}
 
-        {editing && task && (
-          <div className="border-t border-border pt-4">
-            <TaskWorkflow taskId={task.id} board={board} />
-          </div>
-        )}
-      </div>
+      {editing && task && (
+        <div className="mt-4 border-t border-border pt-4">
+          <TaskWorkflow taskId={task.id} board={board} />
+        </div>
+      )}
     </Modal>
   );
 }

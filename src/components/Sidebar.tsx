@@ -12,10 +12,14 @@ import {
   Users,
   CheckSquare,
   FileBarChart,
+  ShieldCheck,
+  Crown,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { useAccess } from "@/lib/access";
+import { ROLE_META } from "@/lib/permissions";
 import { cn, avatarColor, initials, contrastText, withAlpha } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
@@ -29,11 +33,15 @@ interface SidebarProps {
 export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
   const { boards } = useStore();
   const { user, signOut } = useAuth();
+  const { can, role, isAdmin } = useAccess();
   const pathname = usePathname();
   const [createOpen, setCreateOpen] = useState(false);
 
   const email = user?.email ?? "";
   const avatarBg = avatarColor(email || "user");
+  const roleMeta = ROLE_META[role];
+  const canSeeBoards = can("board.view");
+  const canManageBoards = can("board.manage");
 
   const navItem = (
     href: string,
@@ -100,52 +108,61 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
 
       {/* Nav */}
       <nav className="mt-4 space-y-1 px-3">
-        {navItem("/", "Доски", LayoutDashboard, "#6366f1")}
-        {navItem("/my", "Мои задачи", CheckSquare, "#8b5cf6")}
-        {navItem("/journal", "Журнал", BookOpenText, "#0ea5e9")}
-        {navItem("/reports", "Отчёты", FileBarChart, "#10b981")}
-        {navItem("/team", "Команда", Users, "#f43f5e")}
-        {navItem("/analytics", "Аналитика", BarChart3, "#f59e0b")}
+        {canSeeBoards && navItem("/", "Доски", LayoutDashboard, "#6366f1")}
+        {canSeeBoards && navItem("/my", "Мои задачи", CheckSquare, "#8b5cf6")}
+        {can("journal.view") && navItem("/journal", "Журнал", BookOpenText, "#0ea5e9")}
+        {can("reports.view") && navItem("/reports", "Отчёты", FileBarChart, "#10b981")}
+        {can("team.view") && navItem("/team", "Команда", Users, "#f43f5e")}
+        {can("analytics.view") && navItem("/analytics", "Аналитика", BarChart3, "#f59e0b")}
+        {isAdmin && navItem("/admin", "Администрирование", ShieldCheck, "#f59e0b")}
       </nav>
 
       {/* Boards list */}
+      {canSeeBoards && (
       <div className="mt-6 flex items-center justify-between px-5 pb-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-faint">
           Доски
         </span>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="rounded-lg p-1 text-muted transition hover:bg-surface-2 hover:text-brand"
-          title="Создать доску"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        {canManageBoards && (
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="rounded-lg p-1 text-muted transition hover:bg-surface-2 hover:text-brand"
+            title="Создать доску"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
       </div>
+      )}
 
       <div className="board-scroll flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
-        {boards.length === 0 && (
+        {!canSeeBoards && (
+          <p className="px-2 py-3 text-xs text-faint">Нет доступа к доскам</p>
+        )}
+        {canSeeBoards && boards.length === 0 && (
           <p className="px-2 py-3 text-xs text-faint">Пока нет досок</p>
         )}
-        {boards.map((b) => {
-          const active = pathname === `/board/${b.id}`;
-          return (
-            <Link
-              key={b.id}
-              href={`/board/${b.id}`}
-              onClick={onNavigate}
-              className={cn(
-                "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-all",
-                active ? "bg-surface-2 font-semibold text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"
-              )}
-            >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-transparent transition-all group-hover:ring-[color:var(--dot)]/25"
-                style={{ backgroundColor: b.color, ["--dot" as string]: b.color }}
-              />
-              <span className="truncate">{b.name}</span>
-            </Link>
-          );
-        })}
+        {canSeeBoards &&
+          boards.map((b) => {
+            const active = pathname === `/board/${b.id}`;
+            return (
+              <Link
+                key={b.id}
+                href={`/board/${b.id}`}
+                onClick={onNavigate}
+                className={cn(
+                  "group flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-all",
+                  active ? "bg-surface-2 font-semibold text-fg" : "text-muted hover:bg-surface-2 hover:text-fg"
+                )}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-transparent transition-all group-hover:ring-[color:var(--dot)]/25"
+                  style={{ backgroundColor: b.color, ["--dot" as string]: b.color }}
+                />
+                <span className="truncate">{b.name}</span>
+              </Link>
+            );
+          })}
       </div>
 
       {/* Footer */}
@@ -157,8 +174,18 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
           >
             {initials(email || "U")}
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-muted" title={email}>
-            {email || "Пользователь"}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm text-muted" title={email}>
+              {email || "Пользователь"}
+            </span>
+            <span
+              className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold"
+              style={{ color: roleMeta.color }}
+            >
+              {role === "owner" && <Crown className="h-2.5 w-2.5" />}
+              {role === "admin" && <ShieldCheck className="h-2.5 w-2.5" />}
+              {roleMeta.label}
+            </span>
           </span>
           <button
             onClick={() => signOut()}

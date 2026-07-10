@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check, UserCircle2 } from "lucide-react";
-import { useStore } from "@/lib/store";
 import { useMe } from "@/lib/me";
+import { useTeam } from "@/lib/team";
 import { Avatar } from "./Avatar";
 
 export function MePicker() {
-  const { members } = useStore();
+  const team = useTeam();
   const [me, setMe] = useMe();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -40,12 +40,12 @@ export function MePicker() {
         <div className="absolute right-0 z-40 mt-1 w-56 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-xl animate-scale-in">
           <p className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Я — это</p>
           <div className="max-h-64 overflow-y-auto">
-            {members.length === 0 && (
+            {team.length === 0 && (
               <p className="px-3 py-2 text-sm text-muted">Сначала добавьте участников в «Команду»</p>
             )}
-            {members.map((m) => (
+            {team.map((m) => (
               <button
-                key={m.id}
+                key={m.key}
                 onClick={() => {
                   setMe(m.name);
                   setOpen(false);

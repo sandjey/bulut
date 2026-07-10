@@ -5,6 +5,7 @@ import { Plus, Trash2, Pencil, Maximize2 } from "lucide-react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
 import { Board, Task } from "@/lib/types";
 import { useStore } from "@/lib/store";
+import { useCan } from "@/lib/access";
 import { TaskCard } from "./TaskCard";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,10 @@ export function BoardColumn({
   onOpenTask,
 }: BoardColumnProps) {
   const { renameColumn, deleteColumn } = useStore();
+  const can = useCan();
+  const canManage = can("board.manage");
+  const canCreate = can("card.create");
+  const canMove = can("card.move");
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(columnName);
@@ -80,6 +85,7 @@ export function BoardColumn({
             <span className="grid h-5 min-w-[20px] place-items-center rounded-full border border-border bg-surface px-1.5 text-xs font-semibold text-muted">
               {tasks.length}
             </span>
+            {canManage && (
             <div className="relative">
               <button
                 onClick={() => setMenuOpen((o) => !o)}
@@ -114,6 +120,7 @@ export function BoardColumn({
                 </>
               )}
             </div>
+            )}
           </>
         )}
       </div>
@@ -130,7 +137,7 @@ export function BoardColumn({
             )}
           >
             {tasks.map((task, index) => (
-              <Draggable key={task.id} draggableId={task.id} index={index}>
+              <Draggable key={task.id} draggableId={task.id} index={index} isDragDisabled={!canMove}>
                 {(dragProvided, dragSnapshot) => (
                   <div
                     ref={dragProvided.innerRef}
@@ -156,7 +163,7 @@ export function BoardColumn({
       </Droppable>
 
       {/* add */}
-      {adding ? (
+      {!canCreate ? null : adding ? (
         <div className="m-2 rounded-lg border border-brand/40 bg-surface p-2 shadow-sm">
           <textarea
             ref={addRef}
