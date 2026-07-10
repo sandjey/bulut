@@ -409,10 +409,10 @@ body {
   --fg: 240 241 245;
   --muted: 150 152 166;
   --faint: 104 106 122;
-  --brand: 255 0 113;      /* #ff0071 — фирменный розовый React Flow */
-  --brand-2: 255 84 156;
-  --brand-3: 236 72 153;
-  --brand-soft: 42 10 28;
+  --brand: 227 11 92;      /* #e30b5c — малиновый (raspberry) */
+  --brand-2: 244 63 122;
+  --brand-3: 219 39 119;
+  --brand-soft: 42 8 24;
   --brand-fg: 255 255 255;
   color-scheme: dark;
   color: rgb(var(--fg));
@@ -420,7 +420,7 @@ body {
 
 .bulut-flow {
   --xy-background-color: transparent;
-  --xy-edge-stroke-default: rgb(var(--border-strong));
+  --xy-edge-stroke-default: rgb(var(--brand) / 0.9);
   --xy-edge-stroke-selected-default: rgb(var(--brand));
   --xy-connectionline-stroke-default: rgb(var(--brand));
   background:
@@ -463,7 +463,10 @@ body {
 }
 
 /* Рёбра */
-.bulut-flow .react-flow__edge-path { stroke-width: 1.75; }
+.bulut-flow .react-flow__edge-path { stroke-width: 2; }
+/* наконечник-стрелка наследует цвет ребра (малиновый) */
+.bulut-flow .react-flow__arrowhead path,
+.bulut-flow marker path { fill: rgb(var(--brand)); stroke: rgb(var(--brand)); }
 .bulut-flow .react-flow__edge.animated .react-flow__edge-path {
   stroke-dasharray: 6;
   animation: dashdraw .55s linear infinite;

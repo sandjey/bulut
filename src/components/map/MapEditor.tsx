@@ -65,7 +65,7 @@ function uid(): string {
 const DND_KEY = "application/bulut-kind";
 
 const edgeDefaults = {
-  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+  markerEnd: { type: MarkerType.ArrowClosed, width: 22, height: 22 },
   type: "smoothstep" as const,
   animated: true,
 };
