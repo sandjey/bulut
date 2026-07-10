@@ -14,6 +14,8 @@ import {
   addEdge,
   useReactFlow,
   MarkerType,
+  ConnectionLineType,
+  ConnectionMode,
   type Connection,
   type Viewport,
   type OnSelectionChangeParams,
@@ -53,8 +55,9 @@ function uuid(): string {
 }
 
 const edgeDefaults = {
-  markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-  type: "default" as const,
+  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+  type: "smoothstep" as const,
+  animated: true,
 };
 
 export function MapEditor({ map }: { map: ProjectMap }) {
@@ -167,7 +170,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const selectedEdge = useMemo(() => edges.find((e) => e.id === selEdgeId) ?? null, [edges, selEdgeId]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="bulut-map-root flex h-full flex-col bg-bg">
       {/* Toolbar */}
       <div className="z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface/80 px-3 py-2 backdrop-blur">
         <Link href="/maps" className="btn-ghost p-1.5" title="К картам">
@@ -276,12 +279,15 @@ function EditorInner({ map }: { map: ProjectMap }) {
             nodesDraggable={canEdit}
             nodesConnectable={canEdit}
             elementsSelectable
+            connectionMode={ConnectionMode.Loose}
+            connectionLineType={ConnectionLineType.SmoothStep}
+            defaultEdgeOptions={edgeDefaults}
             deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
             proOptions={{ hideAttribution: false }}
             minZoom={0.2}
             maxZoom={2}
           >
-            <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="rgb(var(--border-strong))" />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgb(var(--border))" />
             <Controls showInteractive={false} />
             <MiniMap
               pannable

@@ -51,7 +51,7 @@ function BulutNodeInner({ data, selected }: NodeProps<MapNode>) {
     return (
       <div
         className={cn(
-          "min-h-[64px] w-[200px] rotate-[-1deg] rounded-md p-3 text-sm shadow-md transition",
+          "bulut-node min-h-[64px] w-[200px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md",
           selected && "ring-2 ring-brand",
         )}
         style={{ background: withAlpha(color, 0.16), border: `1px solid ${withAlpha(color, 0.4)}` }}
@@ -68,7 +68,7 @@ function BulutNodeInner({ data, selected }: NodeProps<MapNode>) {
     return (
       <div
         className={cn(
-          "h-full min-h-[160px] w-full min-w-[260px] rounded-2xl border-2 border-dashed p-3 transition",
+          "bulut-node h-full min-h-[160px] w-full min-w-[260px] rounded-2xl border-2 border-dashed p-3",
           selected && "ring-2 ring-brand",
         )}
         style={{ borderColor: withAlpha(color, 0.6), background: withAlpha(color, 0.05) }}
@@ -95,9 +95,9 @@ function BulutNodeInner({ data, selected }: NodeProps<MapNode>) {
   return (
     <div
       className={cn(
-        "group relative flex min-w-[168px] max-w-[260px] items-start gap-2.5 border bg-surface px-3.5 py-2.5 shadow-sm transition",
-        terminator ? "rounded-full" : "rounded-xl",
-        selected ? "ring-2 ring-brand border-transparent" : "border-border hover:shadow-md",
+        "bulut-node group relative flex min-w-[172px] max-w-[264px] items-start gap-2.5 border bg-surface px-3.5 py-2.5 shadow-lg",
+        terminator ? "rounded-full" : "rounded-2xl",
+        selected ? "ring-2 ring-brand border-transparent" : "border-border hover:border-border-strong",
       )}
     >
       <Handles color={color} />
@@ -159,8 +159,8 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "flex w-[220px] items-center gap-2.5 rounded-xl border bg-surface px-3 py-2.5 shadow-sm transition",
-        selected ? "ring-2 ring-brand border-transparent" : "border-border hover:shadow-md",
+        "bulut-node flex w-[224px] items-center gap-2.5 rounded-2xl border bg-surface px-3 py-2.5 shadow-lg",
+        selected ? "ring-2 ring-brand border-transparent" : "border-border hover:border-border-strong",
       )}
       onDoubleClick={open}
       title="Двойной клик — открыть"

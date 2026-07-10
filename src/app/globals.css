@@ -394,76 +394,121 @@ body {
 }
 
 /* ============================================================
-   Bulut MAP — тема React Flow под стиль приложения
+   Bulut MAP — студийная тема в стиле reactflow.dev
+   Near-black холст, розовый акцент #ff0071, живые стрелки.
+   Переопределяем токены темы прямо для редактора карты, поэтому
+   узлы/панели (bg-surface/border-border/ring-brand) сразу тёмные+розовые.
    ============================================================ */
+.bulut-map-root {
+  --bg: 9 9 12;
+  --surface: 22 22 27;
+  --surface-2: 32 32 39;
+  --surface-3: 44 44 54;
+  --border: 40 40 50;
+  --border-strong: 66 66 82;
+  --fg: 240 241 245;
+  --muted: 150 152 166;
+  --faint: 104 106 122;
+  --brand: 255 0 113;      /* #ff0071 — фирменный розовый React Flow */
+  --brand-2: 255 84 156;
+  --brand-3: 236 72 153;
+  --brand-soft: 42 10 28;
+  --brand-fg: 255 255 255;
+  color-scheme: dark;
+  color: rgb(var(--fg));
+}
+
 .bulut-flow {
-  --xy-background-color: rgb(var(--bg));
+  --xy-background-color: transparent;
   --xy-edge-stroke-default: rgb(var(--border-strong));
   --xy-edge-stroke-selected-default: rgb(var(--brand));
   --xy-connectionline-stroke-default: rgb(var(--brand));
-  background: rgb(var(--bg));
+  background:
+    radial-gradient(1100px 520px at 72% -8%, rgb(var(--brand) / 0.10), transparent 60%),
+    radial-gradient(900px 500px at 20% 120%, rgb(139 92 246 / 0.08), transparent 60%),
+    rgb(var(--bg));
 }
+
+/* Узлы: появление + мягкий ховер (анимируем ВНУТРЕННИЙ контейнер,
+   чтобы не конфликтовать с transform-позиционированием React Flow) */
+@keyframes bulutNodeIn {
+  from { opacity: 0; transform: translateY(7px) scale(.965); }
+  to   { opacity: 1; transform: none; }
+}
+.bulut-node {
+  animation: bulutNodeIn .3s cubic-bezier(.2, .8, .2, 1) both;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.bulut-node:hover { transform: translateY(-2px); }
+.bulut-flow .react-flow__node.selected .bulut-node {
+  box-shadow: 0 0 0 2px rgb(var(--brand)), 0 10px 30px -10px rgb(var(--brand) / 0.5);
+}
+
+/* Ручки-точки */
 .bulut-flow .react-flow__handle {
   width: 9px;
   height: 9px;
   background: rgb(var(--surface));
   border: 1.5px solid rgb(var(--border-strong));
   border-radius: 9999px;
-  transition: border-color .15s, background .15s, transform .15s;
+  transition: border-color .15s, background .15s, transform .15s, box-shadow .15s;
 }
+.bulut-flow .react-flow__node:hover .react-flow__handle { border-color: rgb(var(--brand) / 0.7); }
 .bulut-flow .react-flow__handle:hover,
 .bulut-flow .react-flow__handle-connecting {
   border-color: rgb(var(--brand));
   background: rgb(var(--brand));
-  transform: scale(1.15);
+  transform: scale(1.25);
+  box-shadow: 0 0 0 4px rgb(var(--brand) / 0.18);
 }
-.bulut-flow .react-flow__edge-path {
-  stroke-width: 2;
+
+/* Рёбра */
+.bulut-flow .react-flow__edge-path { stroke-width: 1.75; }
+.bulut-flow .react-flow__edge.animated .react-flow__edge-path {
+  stroke-dasharray: 6;
+  animation: dashdraw .55s linear infinite;
 }
+@keyframes dashdraw { to { stroke-dashoffset: -12; } }
 .bulut-flow .react-flow__edge.selected .react-flow__edge-path,
 .bulut-flow .react-flow__edge:hover .react-flow__edge-path {
   stroke: rgb(var(--brand));
+  filter: drop-shadow(0 0 6px rgb(var(--brand) / 0.5));
 }
-.bulut-flow .react-flow__edge-text {
-  fill: rgb(var(--fg));
-  font-size: 11px;
-  font-weight: 600;
+.bulut-flow .react-flow__edge-text { fill: rgb(var(--fg)); font-size: 11px; font-weight: 600; }
+.bulut-flow .react-flow__edge-textbg { fill: rgb(var(--surface)); }
+.bulut-flow .react-flow__connectionline path,
+.bulut-flow .react-flow__connection-path {
+  stroke: rgb(var(--brand));
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgb(var(--brand) / 0.6));
 }
-.bulut-flow .react-flow__edge-textbg {
-  fill: rgb(var(--surface));
-}
+
 /* Controls */
 .bulut-flow .react-flow__controls {
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   border: 1px solid rgb(var(--border));
 }
 .bulut-flow .react-flow__controls-button {
-  background: rgb(var(--surface));
+  background: rgb(var(--surface) / 0.9);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid rgb(var(--border));
   color: rgb(var(--muted));
   width: 30px;
   height: 30px;
 }
-.bulut-flow .react-flow__controls-button:hover {
-  background: rgb(var(--surface-2));
-  color: rgb(var(--fg));
-}
-.bulut-flow .react-flow__controls-button svg {
-  fill: currentColor;
-}
+.bulut-flow .react-flow__controls-button:hover { background: rgb(var(--surface-2)); color: rgb(var(--brand)); }
+.bulut-flow .react-flow__controls-button svg { fill: currentColor; }
+
 /* MiniMap */
 .bulut-flow .react-flow__minimap {
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
   border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface));
+  background: rgb(var(--surface) / 0.85);
+  backdrop-filter: blur(8px);
 }
-.bulut-flow .react-flow__attribution {
-  background: transparent;
-  color: rgb(var(--faint));
-  font-size: 10px;
-}
+.bulut-flow .react-flow__attribution { background: transparent; color: rgb(var(--faint)); font-size: 10px; }
 .bulut-flow .react-flow__attribution a { color: rgb(var(--faint)); }
