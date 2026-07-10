@@ -201,12 +201,22 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     <Toolbar id={id} data={data} onColor={setColor} onDuplicate={duplicate} onDelete={remove} />
   ) : null;
 
+  // Ресайзер рендерим ПОСЛЕ карточки, чтобы ручки были поверх и ловились мышью.
+  const resizer = canEdit ? (
+    <NodeResizer
+      isVisible={isSelected}
+      minWidth={120}
+      minHeight={44}
+      lineClassName="!border-brand"
+      handleClassName="!h-2.5 !w-2.5 !rounded-full !bg-brand !border-2 !border-white"
+    />
+  ) : null;
+
   // ── Заметка ──
   if (kind === "note") {
     return (
       <>
         {isSelected && toolbar}
-        {canEdit && <NodeResizer isVisible={isSelected} minWidth={140} minHeight={64} lineClassName="!border-brand" handleClassName="!bg-brand !border-white" />}
         <div
           className={cn("bulut-node h-full min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand")}
           style={{ background: withAlpha(color, 0.16), border: `1px solid ${withAlpha(color, 0.4)}` }}
@@ -221,6 +231,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             className="whitespace-pre-wrap font-medium text-fg"
           />
         </div>
+        {resizer}
       </>
     );
   }
@@ -230,7 +241,6 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     return (
       <>
         {isSelected && toolbar}
-        {canEdit && <NodeResizer isVisible={isSelected} minWidth={200} minHeight={140} lineClassName="!border-brand" handleClassName="!bg-brand !border-white" />}
         <div
           className={cn("bulut-node h-full min-h-[140px] w-full min-w-[200px] rounded-2xl border-2 border-dashed p-3", isSelected && "ring-2 ring-brand")}
           style={{ borderColor: withAlpha(color, 0.6), background: withAlpha(color, 0.05) }}
@@ -244,6 +254,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             className="inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold"
           />
         </div>
+        {resizer}
       </>
     );
   }
@@ -253,10 +264,8 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     return (
       <>
         {isSelected && toolbar}
-        {canEdit && (
-          <NodeResizer isVisible={isSelected} minWidth={160} minHeight={56} lineClassName="!border-brand" handleClassName="!bg-brand !border-white" />
-        )}
         <LinkNode id={id} data={data} selected={isSelected} color={color} />
+        {resizer}
       </>
     );
   }
@@ -279,18 +288,9 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   return (
     <>
       {isSelected && toolbar}
-      {canEdit && (
-        <NodeResizer
-          isVisible={isSelected}
-          minWidth={140}
-          minHeight={terminator ? 44 : 56}
-          lineClassName="!border-brand"
-          handleClassName="!bg-brand !border-white"
-        />
-      )}
       <div
         className={cn(
-          "bulut-node group relative flex h-full w-full gap-2.5 overflow-hidden border px-3.5 py-2.5 backdrop-blur-sm",
+          "bulut-node group relative flex h-full w-full gap-2.5 border px-3.5 py-2.5 backdrop-blur-sm",
           terminator ? "items-center rounded-full" : "items-start rounded-2xl",
           isSelected && "ring-2 ring-brand",
         )}
@@ -306,7 +306,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
         >
           <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <EditableText
             value={data.label}
             editable={canEdit}
@@ -331,6 +331,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
           )}
         </div>
       </div>
+      {resizer}
     </>
   );
 }
@@ -363,7 +364,7 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node flex h-full w-full items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
+        "bulut-node flex h-full w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
         selected && "ring-2 ring-brand",
       )}
       style={{
@@ -381,7 +382,7 @@ function LinkNode({
       >
         {missing ? <AlertTriangle className="h-4 w-4 text-white" /> : <ExternalLink className="h-4 w-4" />}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-hidden">
         <div className="truncate text-sm font-semibold text-fg">{title}</div>
         <div className="truncate text-xs text-muted">{missing ? "источник удалён" : subtitle}</div>
       </div>
