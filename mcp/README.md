@@ -1,8 +1,36 @@
-# Bulut MAP — MCP-сервер для Claude
+# Bulut MAP — MCP для Claude
 
 Позволяет **Claude** создавать флоу-карты прямо в Bulut MAP:
 скажи *«создай в Bulut флоу регистрации по OTP»* — Claude сам придумает узлы и
 связи, вызовет инструмент, а сервер разложит их и вернёт ссылку на карту.
+
+Есть **два способа** подключить:
+
+- **A. Удалённый коннектор (claude.ai, браузер/телефон)** — ничего не запускаешь
+  локально, добавляешь один URL. См. раздел «Веб-коннектор» ниже.
+- **B. Локальный сервер (Claude Desktop / Claude Code)** — папка `mcp/`, запускается
+  у тебя. См. остальную часть файла.
+
+---
+
+## A. Веб-коннектор (claude.ai) — рекомендую
+
+В Bulut уже есть HTTP MCP-эндпоинт `/api/mcp`. В claude.ai:
+**Settings → Connectors → Add custom connector**:
+
+- **Name:** `Bulut MAP`
+- **URL:** `https://bulut-kappa.vercel.app/api/mcp?key=ВАШ_BULUT_API_KEY`
+- **OAuth Client ID:** оставить **пустым**
+
+Готово — Claude сможет вызывать `create_flow`, `list_flows` и т.д.
+
+> На Vercel должны быть заданы env: `BULUT_API_KEY`, `BULUT_API_SERVICE_EMAIL`,
+> `BULUT_API_SERVICE_PASS` (значения из `.env` проекта). Без них создание карт
+> через API не сработает.
+
+---
+
+## B. Локальный сервер (Claude Desktop / Claude Code)
 
 ## Что умеет (инструменты)
 

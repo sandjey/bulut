@@ -18,6 +18,7 @@
     "date-fns": "^3.6.0",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.424.0",
+    "mcp-handler": "^1.1.0",
     "next": "^14.2.5",
     "nodemailer": "^9.0.3",
     "react": "^18.3.1",
@@ -25,7 +26,8 @@
     "recharts": "^2.12.7",
     "server-only": "^0.0.1",
     "xlsx": "^0.18.5",
-    "xlsx-js-style": "^1.2.0"
+    "xlsx-js-style": "^1.2.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
