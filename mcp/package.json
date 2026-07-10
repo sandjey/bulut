@@ -1,0 +1,13 @@
+{
+  "name": "bulut-map-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP-сервер для создания флоу-карт в Bulut MAP из Claude",
+  "bin": { "bulut-map-mcp": "index.mjs" },
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  }
+}
