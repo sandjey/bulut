@@ -75,17 +75,25 @@ const edgeDefaults = {
   labelStyle: { fill: "#f0f1f5", fontWeight: 700, fontSize: 11 },
 };
 
-/** Нормализует размер узла в top-level width/height (их обновляет NodeResizer). */
+/**
+ * Нормализует размер: фиксируем только ШИРИНУ (в style.width), высоту не задаём —
+ * карточка авто-растёт под текст. Исключение — «группа» (это контейнер, с высотой).
+ */
 function withSize(n: MapNode): MapNode {
   const k = (n.data?.kind ?? "action") as MapNodeKind;
   const sw = typeof n.style?.width === "number" ? n.style.width : undefined;
-  const sh = typeof n.style?.height === "number" ? n.style.height : undefined;
-  const w = n.width ?? sw ?? n.measured?.width ?? NODE_SIZE[k].w;
-  const h = n.height ?? sh ?? n.measured?.height ?? NODE_SIZE[k].h;
-  const style = { ...n.style };
-  delete style.width;
-  delete style.height;
-  return { ...n, width: w, height: h, style };
+  const w = (n.width as number | undefined) ?? sw ?? NODE_SIZE[k].w;
+  const style: React.CSSProperties = { ...n.style, width: w };
+  if (k === "group") {
+    const sh = typeof n.style?.height === "number" ? n.style.height : undefined;
+    style.height = (n.height as number | undefined) ?? sh ?? NODE_SIZE[k].h;
+  } else {
+    delete style.height;
+  }
+  const out: MapNode = { ...n, style };
+  delete (out as { width?: number }).width; // ширину держим только в style.width
+  if (k !== "group") delete (out as { height?: number }).height;
+  return out;
 }
 
 interface Snap {
@@ -213,8 +221,8 @@ function EditorInner({ map }: { map: ProjectMap }) {
       type: "bulut",
       position: pos,
       data: { label: kind === "note" ? "" : meta.label, kind, color: meta.color },
-      width: sz.w,
-      height: sz.h,
+      // фиксируем только ширину; высота авто (группа — с высотой)
+      style: kind === "group" ? { width: sz.w, height: sz.h } : { width: sz.w },
       ...(kind === "group" ? { zIndex: -1 } : {}),
     };
   };

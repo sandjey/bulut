@@ -104,7 +104,8 @@ function EditableText({
     return multiline ? (
       <textarea
         {...common}
-        rows={2}
+        rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+        className={cn(common.className, "resize-none")}
         onKeyDown={(e) => {
           if (e.key === "Escape") setEditing(false);
         }}
@@ -223,7 +224,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       <>
         {isSelected && toolbar}
         <div
-          className={cn("bulut-node h-full min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand")}
+          className={cn("bulut-node min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand")}
           style={{ background: withAlpha(color, 0.16), border: `1px solid ${withAlpha(color, 0.4)}` }}
         >
           <Handles color={color} />
@@ -295,15 +296,15 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       {isSelected && toolbar}
       <div
         className={cn(
-          "bulut-node group relative flex h-full w-full gap-2.5 border px-3.5 py-2.5 backdrop-blur-sm",
-          terminator ? "items-center rounded-full" : "items-start rounded-2xl",
+          "bulut-node group relative flex w-full flex-col items-center justify-center gap-1.5 border px-3.5 py-3 text-center backdrop-blur-sm",
+          terminator ? "min-h-[52px] rounded-full" : "min-h-[70px] rounded-2xl",
           isSelected && "ring-2 ring-brand",
         )}
         style={cardStyle}
       >
         <Handles color={color} />
         <span
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
           style={{
             background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`,
             boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}`,
@@ -311,30 +312,35 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
         >
           <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <EditableText
+          value={data.label}
+          editable={canEdit}
+          multiline
+          placeholder={NODE_KIND_META[kind]?.label ?? "Узел"}
+          onCommit={(v) => patch({ label: v })}
+          className={cn(
+            "w-full whitespace-pre-wrap break-words text-center text-sm font-semibold leading-snug",
+            terminator ? "text-white" : "text-fg",
+          )}
+        />
+        {(data.description || (decision && canEdit)) && (
           <EditableText
-            value={data.label}
+            value={data.description ?? ""}
             editable={canEdit}
-            placeholder={NODE_KIND_META[kind]?.label ?? "Узел"}
-            onCommit={(v) => patch({ label: v })}
-            className={cn("break-words text-sm font-semibold leading-snug", terminator ? "text-white" : "text-fg")}
+            multiline
+            placeholder="описание…"
+            onCommit={(v) => patch({ description: v })}
+            className={cn(
+              "w-full whitespace-pre-wrap break-words text-center text-xs",
+              terminator ? "text-white/80" : "text-muted",
+            )}
           />
-          {(data.description || (decision && canEdit)) && (
-            <EditableText
-              value={data.description ?? ""}
-              editable={canEdit}
-              multiline
-              placeholder="описание…"
-              onCommit={(v) => patch({ description: v })}
-              className={cn("mt-0.5 text-xs", terminator ? "text-white/80" : "text-muted")}
-            />
-          )}
-          {decision && (
-            <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-              <GitBranch className="h-2.5 w-2.5" /> да / нет
-            </div>
-          )}
-        </div>
+        )}
+        {decision && (
+          <div className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+            <GitBranch className="h-2.5 w-2.5" /> да / нет
+          </div>
+        )}
       </div>
       {resizer}
     </>
@@ -369,7 +375,7 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node flex h-full w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
+        "bulut-node flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center backdrop-blur-sm",
         selected && "ring-2 ring-brand",
       )}
       style={{
@@ -382,14 +388,14 @@ function LinkNode({
     >
       <Handles color={color} />
       <span
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
         style={{ background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`, boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}` }}
       >
         {missing ? <AlertTriangle className="h-4 w-4 text-white" /> : <ExternalLink className="h-4 w-4" />}
       </span>
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="truncate text-sm font-semibold text-fg">{title}</div>
-        <div className="truncate text-xs text-muted">{missing ? "источник удалён" : subtitle}</div>
+      <div className="w-full">
+        <div className="break-words text-sm font-semibold text-fg">{title}</div>
+        <div className="break-words text-xs text-muted">{missing ? "источник удалён" : subtitle}</div>
       </div>
     </div>
   );
