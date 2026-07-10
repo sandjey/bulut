@@ -29,6 +29,33 @@ export function autoLayout(nodes: MapNode[], edges: MapEdge[], dir: "LR" | "TB" 
   });
 }
 
+/**
+ * Выравнивание «на месте»: НЕ перекладывает узлы в новую схему, а аккуратно
+ * ровняет их там, где они стоят — близкие по вертикали встают в одну строку,
+ * близкие по горизонтали — в одну колонку, всё прилипает к сетке.
+ */
+export function tidyInPlace(nodes: MapNode[], grid = 20, thresh = 52): MapNode[] {
+  // Кластеризация по оси: близкие значения получают общий «якорь».
+  const anchorFor = (axis: "x" | "y") => {
+    const sorted = [...nodes].sort((a, b) => a.position[axis] - b.position[axis]);
+    const map = new Map<string, number>();
+    let anchor: number | null = null;
+    for (const n of sorted) {
+      const v = n.position[axis];
+      if (anchor === null || v - anchor > thresh) anchor = v;
+      map.set(n.id, anchor);
+    }
+    return map;
+  };
+  const xa = anchorFor("x");
+  const ya = anchorFor("y");
+  const snap = (v: number) => Math.round(v / grid) * grid;
+  return nodes.map((n) => ({
+    ...n,
+    position: { x: snap(xa.get(n.id) ?? n.position.x), y: snap(ya.get(n.id) ?? n.position.y) },
+  }));
+}
+
 function download(dataUrl: string, name: string) {
   const a = document.createElement("a");
   a.href = dataUrl;

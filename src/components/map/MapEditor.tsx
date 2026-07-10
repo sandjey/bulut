@@ -33,7 +33,6 @@ import {
   Undo2,
   Redo2,
   Wand2,
-  AlignVerticalJustifyStart,
   ImageDown,
   FileJson,
   Upload,
@@ -43,7 +42,7 @@ import { useMaps } from "@/lib/maps";
 import { useCan } from "@/lib/access";
 import { useStore } from "@/lib/store";
 import { nodeTypes } from "./BulutNode";
-import { autoLayout, exportPng, exportJson, parseImport } from "./mapUtils";
+import { tidyInPlace, exportPng, exportJson, parseImport } from "./mapUtils";
 import {
   NODE_KINDS,
   NODE_KIND_META,
@@ -276,21 +275,11 @@ function EditorInner({ map }: { map: ProjectMap }) {
     setSelEdgeId(null);
   }, [setNodes, setEdges, snapshot]);
 
-  // «Навести порядок»: одинаковые размеры по типу + аккуратная раскладка с ровными отступами.
-  const doTidy = useCallback(
-    (dir: "LR" | "TB") => {
-      snapshot();
-      setNodes((ns) => {
-        const sized = ns.map((n) => {
-          const k = (n.data?.kind ?? "action") as MapNodeKind;
-          return { ...n, width: NODE_SIZE[k].w, height: NODE_SIZE[k].h };
-        });
-        return autoLayout(sized, edgesRef.current, dir);
-      });
-      setTimeout(() => rf.fitView({ padding: 0.2, duration: 400 }), 80);
-    },
-    [rf, setNodes, snapshot],
-  );
+  // «Выровнять»: ровняет блоки НА МЕСТЕ (строки/колонки, по сетке), не меняя схему.
+  const doTidy = useCallback(() => {
+    snapshot();
+    setNodes((ns) => tidyInPlace(ns));
+  }, [setNodes, snapshot]);
 
   const doImport = useCallback(
     (text: string) => {
@@ -401,8 +390,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
               <ToolbarBtn onClick={undo} disabled={!canUndo} title="Отменить (Ctrl+Z)"><Undo2 className="h-4 w-4" /></ToolbarBtn>
               <ToolbarBtn onClick={redo} disabled={!canRedo} title="Повторить (Ctrl+Shift+Z)"><Redo2 className="h-4 w-4" /></ToolbarBtn>
               <span className="mx-1 h-5 w-px bg-border" />
-              <ToolbarBtn onClick={() => doTidy("LR")} title="Навести порядок (по горизонтали)"><Wand2 className="h-4 w-4" /></ToolbarBtn>
-              <ToolbarBtn onClick={() => doTidy("TB")} title="Навести порядок (по вертикали)"><AlignVerticalJustifyStart className="h-4 w-4" /></ToolbarBtn>
+              <ToolbarBtn onClick={doTidy} title="Выровнять блоки (по сетке, не меняя схему)"><Wand2 className="h-4 w-4" /></ToolbarBtn>
               <ToolbarBtn onClick={exportPngNow} disabled={busy} title="Экспорт PNG"><ImageDown className="h-4 w-4" /></ToolbarBtn>
               <ToolbarBtn onClick={() => exportJson(nodesRef.current, edgesRef.current, map.name)} title="Экспорт JSON"><FileJson className="h-4 w-4" /></ToolbarBtn>
               <ToolbarBtn onClick={() => fileRef.current?.click()} title="Импорт JSON"><Upload className="h-4 w-4" /></ToolbarBtn>
