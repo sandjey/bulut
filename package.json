@@ -10,11 +10,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@hello-pangea/dnd": "^16.6.0",
     "@supabase/supabase-js": "^2.108.2",
     "@xyflow/react": "^12.11.2",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "^0.424.0",
     "next": "^14.2.5",
     "nodemailer": "^9.0.3",
