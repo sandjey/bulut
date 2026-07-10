@@ -48,13 +48,18 @@ function uid(): string {
   });
 }
 
-/** Ручки на всех четырёх сторонах (соединять можно с любой на любую). */
+/**
+ * Ручки на всех четырёх сторонах. Все — type="source": в режиме
+ * ConnectionMode.Loose source-хендл принимает и исходящие, и входящие связи,
+ * поэтому тянуть стрелку можно от ЛЮБОЙ стороны к любой, и она сохраняется
+ * (ребро всегда ссылается на существующий source-хендл).
+ */
 function Handles({ color }: { color: string }) {
   const s = { borderColor: color } as React.CSSProperties;
   return (
     <>
-      <Handle type="target" position={Position.Left} id="l" style={s} />
-      <Handle type="target" position={Position.Top} id="t" style={s} />
+      <Handle type="source" position={Position.Left} id="l" style={s} />
+      <Handle type="source" position={Position.Top} id="t" style={s} />
       <Handle type="source" position={Position.Right} id="r" style={s} />
       <Handle type="source" position={Position.Bottom} id="b" style={s} />
     </>
