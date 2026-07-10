@@ -46,6 +46,7 @@ import { autoLayout, exportPng, exportJson, parseImport } from "./mapUtils";
 import {
   NODE_KINDS,
   NODE_KIND_META,
+  NODE_SIZE,
   type MapNode,
   type MapEdge,
   type MapNodeKind,
@@ -65,10 +66,26 @@ function uid(): string {
 const DND_KEY = "application/bulut-kind";
 
 const edgeDefaults = {
+  type: "default" as const, // плавная bezier-кривая — ровно и красиво
   markerEnd: { type: MarkerType.ArrowClosed, width: 22, height: 22 },
-  type: "smoothstep" as const,
-  animated: true,
+  labelBgPadding: [7, 4] as [number, number],
+  labelBgBorderRadius: 8,
+  labelBgStyle: { fill: "#16161b", fillOpacity: 0.96, stroke: "#2a2a34", strokeWidth: 1 },
+  labelStyle: { fill: "#f0f1f5", fontWeight: 700, fontSize: 11 },
 };
+
+/** Нормализует размер узла в top-level width/height (их обновляет NodeResizer). */
+function withSize(n: MapNode): MapNode {
+  const k = (n.data?.kind ?? "action") as MapNodeKind;
+  const sw = typeof n.style?.width === "number" ? n.style.width : undefined;
+  const sh = typeof n.style?.height === "number" ? n.style.height : undefined;
+  const w = n.width ?? sw ?? n.measured?.width ?? NODE_SIZE[k].w;
+  const h = n.height ?? sh ?? n.measured?.height ?? NODE_SIZE[k].h;
+  const style = { ...n.style };
+  delete style.width;
+  delete style.height;
+  return { ...n, width: w, height: h, style };
+}
 
 interface Snap {
   nodes: MapNode[];
@@ -87,7 +104,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const { renameMap, setMapColor, saveGraph } = useMaps();
   const canEdit = useCan()("map.edit");
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>(map.graph.nodes ?? []);
+  const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>((map.graph.nodes ?? []).map(withSize));
   const [edges, setEdges, onEdgesChange] = useEdgesState<MapEdge>(map.graph.edges ?? []);
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
@@ -164,12 +181,15 @@ function EditorInner({ map }: { map: ProjectMap }) {
 
   const makeNode = (kind: MapNodeKind, pos: { x: number; y: number }): MapNode => {
     const meta = NODE_KIND_META[kind];
+    const sz = NODE_SIZE[kind];
     return {
       id: uid(),
       type: "bulut",
       position: pos,
       data: { label: kind === "note" ? "" : meta.label, kind, color: meta.color },
-      ...(kind === "group" ? { style: { width: 300, height: 200 }, zIndex: -1 } : {}),
+      width: sz.w,
+      height: sz.h,
+      ...(kind === "group" ? { zIndex: -1 } : {}),
     };
   };
 

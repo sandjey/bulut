@@ -69,3 +69,16 @@ export const NODE_KINDS: NodeKindMeta[] = [
 export const NODE_KIND_META: Record<MapNodeKind, NodeKindMeta> = Object.fromEntries(
   NODE_KINDS.map((k) => [k.kind, k]),
 ) as Record<MapNodeKind, NodeKindMeta>;
+
+/** Размеры узлов по умолчанию (узлы можно свободно ресайзить). */
+export const NODE_SIZE: Record<MapNodeKind, { w: number; h: number }> = {
+  terminator: { w: 190, h: 58 },
+  screen: { w: 212, h: 76 },
+  action: { w: 212, h: 76 },
+  decision: { w: 212, h: 84 },
+  process: { w: 212, h: 76 },
+  link: { w: 230, h: 78 },
+  note: { w: 200, h: 112 },
+  group: { w: 330, h: 220 },
+};
+

@@ -253,6 +253,9 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     return (
       <>
         {isSelected && toolbar}
+        {canEdit && (
+          <NodeResizer isVisible={isSelected} minWidth={160} minHeight={56} lineClassName="!border-brand" handleClassName="!bg-brand !border-white" />
+        )}
         <LinkNode id={id} data={data} selected={isSelected} color={color} />
       </>
     );
@@ -276,9 +279,18 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   return (
     <>
       {isSelected && toolbar}
+      {canEdit && (
+        <NodeResizer
+          isVisible={isSelected}
+          minWidth={140}
+          minHeight={terminator ? 44 : 56}
+          lineClassName="!border-brand"
+          handleClassName="!bg-brand !border-white"
+        />
+      )}
       <div
         className={cn(
-          "bulut-node group relative flex min-w-[176px] max-w-[288px] gap-2.5 border px-3.5 py-2.5 backdrop-blur-sm",
+          "bulut-node group relative flex h-full w-full gap-2.5 overflow-hidden border px-3.5 py-2.5 backdrop-blur-sm",
           terminator ? "items-center rounded-full" : "items-start rounded-2xl",
           isSelected && "ring-2 ring-brand",
         )}
@@ -300,7 +312,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             editable={canEdit}
             placeholder={NODE_KIND_META[kind]?.label ?? "Узел"}
             onCommit={(v) => patch({ label: v })}
-            className={cn("text-sm font-semibold leading-snug", terminator ? "text-white" : "text-fg")}
+            className={cn("break-words text-sm font-semibold leading-snug", terminator ? "text-white" : "text-fg")}
           />
           {(data.description || (decision && canEdit)) && (
             <EditableText
@@ -351,7 +363,7 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node flex w-[228px] items-center gap-2.5 rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
+        "bulut-node flex h-full w-full items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
         selected && "ring-2 ring-brand",
       )}
       style={{
