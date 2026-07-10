@@ -14,6 +14,12 @@ import {
   ALL_PERMISSIONS,
 } from "./permissions";
 
+export interface OrphanAccount {
+  id: string;
+  email: string;
+  createdAt: string;
+}
+
 interface AccessContextValue {
   loading: boolean;
   /** Профиль текущего пользователя (может быть null, пока грузится). */
@@ -34,7 +40,12 @@ interface AccessContextValue {
   setPermissions: (id: string, perms: PermissionKey[]) => Promise<string | null>;
   promoteToAdmin: (id: string) => Promise<string | null>;
   demoteToMember: (id: string) => Promise<string | null>;
+  /** Убрать доступ (обратимо, профиль остаётся). */
   removeUser: (id: string) => Promise<string | null>;
+  /** Полностью удалить аккаунт из Auth (нужен service_role). Работает и для осиротевших. */
+  deleteAccount: (id: string) => Promise<string | null>;
+  /** Список аккаунтов Auth без профиля (осиротевшие). */
+  fetchOrphans: () => Promise<{ configured: boolean; orphans: OrphanAccount[] }>;
 }
 
 const AccessContext = createContext<AccessContextValue | null>(null);
@@ -117,9 +128,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       // Миграция ещё не применена — не ломаем приложение (но админку не открываем).
       if (degraded) return perm !== "admin.access";
       if (role === "owner" || role === "admin") return true;
-      // Профиль ещё не создан триггером — даём базовый просмотр, а не пустоту.
-      const perms = me?.permissions ?? DEFAULT_MEMBER_PERMISSIONS;
-      return perms.includes(perm);
+      // Нет профиля (удалён из проекта / не создан) → нет доступа.
+      if (!me) return false;
+      return me.permissions.includes(perm);
     },
     [degraded, role, me],
   );
@@ -225,23 +236,76 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     [me, profiles],
   );
 
+  // «Убрать доступ»: забираем все права (и снимаем админа), но профиль оставляем —
+  // так действие обратимо и не создаёт «призрачный» аккаунт без профиля.
+  // Полное удаление логина делается в Supabase → Authentication (каскадом удалит профиль).
   const removeUser = useCallback(
     async (id: string): Promise<string | null> => {
       const target = profiles.find((p) => p.id === id);
       if (!me || !target) return "Профиль не найден";
-      if (target.role === "owner") return "Нельзя удалить владельца";
+      if (target.role === "owner") return "Нельзя убрать доступ у владельца";
       if (!canManageProfile(me.role, target.role)) return "Недостаточно прав";
       try {
-        await db.deleteProfile(id);
-        setProfiles((prev) => prev.filter((p) => p.id !== id));
+        await db.updateProfileRole(id, "member", []);
+        setProfiles((prev) =>
+          prev.map((p) => (p.id === id ? { ...p, role: "member", permissions: [] } : p)),
+        );
         return null;
       } catch (e) {
         console.error(e);
-        return "Не удалось удалить пользователя";
+        return "Не удалось убрать доступ";
       }
     },
     [me, profiles],
   );
+
+  const deleteAccount = useCallback(
+    async (id: string): Promise<string | null> => {
+      const target = profiles.find((p) => p.id === id);
+      if (target?.role === "owner") return "Нельзя удалить владельца";
+      const sb = getSupabase();
+      const sess = sb ? (await sb.auth.getSession()).data.session : null;
+      if (!sess) return "Нет активной сессии";
+      try {
+        const res = await fetch("/api/admin/delete-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sess.access_token}` },
+          body: JSON.stringify({ userId: id }),
+        });
+        if (res.status === 501) {
+          // service_role не настроен — мягко забираем доступ (если это профиль)
+          if (target) await removeUser(id);
+          return "Полное удаление недоступно: не задан SUPABASE_SERVICE_ROLE_KEY на сервере.";
+        }
+        const data = await res.json().catch(() => null);
+        if (!res.ok) return data?.error ?? "Не удалось удалить аккаунт";
+        setProfiles((prev) => prev.filter((p) => p.id !== id));
+        return null;
+      } catch {
+        return "Ошибка сети. Попробуйте ещё раз.";
+      }
+    },
+    [profiles, removeUser],
+  );
+
+  const fetchOrphans = useCallback(async (): Promise<{
+    configured: boolean;
+    orphans: OrphanAccount[];
+  }> => {
+    const sb = getSupabase();
+    const sess = sb ? (await sb.auth.getSession()).data.session : null;
+    if (!sess) return { configured: false, orphans: [] };
+    try {
+      const res = await fetch("/api/admin/orphans", {
+        headers: { Authorization: `Bearer ${sess.access_token}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) return { configured: false, orphans: [] };
+      return { configured: !!data.configured, orphans: data.orphans ?? [] };
+    } catch {
+      return { configured: false, orphans: [] };
+    }
+  }, []);
 
   const value = useMemo<AccessContextValue>(
     () => ({
@@ -260,6 +324,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       promoteToAdmin,
       demoteToMember,
       removeUser,
+      deleteAccount,
+      fetchOrphans,
     }),
     [
       loading,
@@ -277,6 +343,8 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       promoteToAdmin,
       demoteToMember,
       removeUser,
+      deleteAccount,
+      fetchOrphans,
     ],
   );
 

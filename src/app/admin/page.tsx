@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ShieldCheck,
   ShieldOff,
@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
   Lock,
+  AlertTriangle,
   Search,
   LayoutDashboard,
   BookOpenText,
@@ -18,7 +19,7 @@ import {
   Waypoints,
   ChevronRight,
 } from "lucide-react";
-import { useAccess } from "@/lib/access";
+import { useAccess, type OrphanAccount } from "@/lib/access";
 import {
   PERMISSION_GROUPS,
   ROLE_META,
@@ -42,10 +43,26 @@ const GROUP_ICONS: Record<string, typeof ShieldCheck> = {
 
 export default function AdminPage() {
   const access = useAccess();
-  const { can, loading, me, profiles } = access;
+  const { can, loading, me, profiles, fetchOrphans, deleteAccount } = access;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [orphans, setOrphans] = useState<OrphanAccount[]>([]);
+
+  const reloadOrphans = useCallback(() => {
+    fetchOrphans().then((r) => setOrphans(r.orphans));
+  }, [fetchOrphans]);
+
+  useEffect(() => {
+    reloadOrphans();
+  }, [reloadOrphans, profiles.length]);
+
+  const removeOrphan = async (id: string) => {
+    if (!confirm("Удалить осиротевший аккаунт из Auth? Email освободится. Действие необратимо.")) return;
+    const e = await deleteAccount(id);
+    if (e) alert(e);
+    else setOrphans((prev) => prev.filter((o) => o.id !== id));
+  };
 
   const sorted = useMemo(() => {
     const rank: Record<string, number> = { owner: 0, admin: 1, member: 2 };
@@ -132,6 +149,36 @@ export default function AdminPage() {
           {sorted.length === 0 && (
             <p className="px-3 py-6 text-center text-sm text-faint">Никого не найдено</p>
           )}
+
+          {/* Осиротевшие аккаунты (есть в Auth, нет в profiles) */}
+          {orphans.length > 0 && (
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="flex items-center gap-1.5 px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-500">
+                <AlertTriangle className="h-3.5 w-3.5" /> Без профиля ({orphans.length})
+              </div>
+              <p className="px-2 pb-2 text-[11px] text-faint">
+                Аккаунты входа без прав в проекте. Можно удалить, чтобы освободить email.
+              </p>
+              {orphans.map((o) => (
+                <div
+                  key={o.id}
+                  className="group flex items-center gap-2.5 rounded-xl px-3 py-2 hover:bg-surface-2/60"
+                >
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-amber-500/15 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    {initials(o.email || "?")}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{o.email || o.id}</span>
+                  <button
+                    onClick={() => removeOrphan(o.id)}
+                    className="rounded-lg p-1.5 text-muted opacity-0 transition hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+                    title="Удалить аккаунт из Auth"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -217,7 +264,7 @@ function UserRow({
 
 function UserEditor({ profile, onBack }: { profile: Profile; onBack: () => void }) {
   const access = useAccess();
-  const { me, setPermissions, promoteToAdmin, demoteToMember, removeUser } = access;
+  const { me, setPermissions, promoteToAdmin, demoteToMember, deleteAccount } = access;
 
   const editable = access.canManage(profile) && profile.role === "member";
   const canEditFields = access.canEditProfile(profile);
@@ -289,9 +336,15 @@ function UserEditor({ profile, onBack }: { profile: Profile; onBack: () => void 
     else flash(setMsg, "Снят с администраторов");
   };
   const doRemove = async () => {
-    if (!confirm(`Удалить пользователя ${profile.name || profile.email} из проекта?`)) return;
+    if (
+      !confirm(
+        `Удалить аккаунт ${profile.name || profile.email}?\n\n` +
+          `Будут удалены: логин (email освободится), профиль и все данные, созданные этим пользователем (доски/задачи/карты). Действие необратимо.`,
+      )
+    )
+      return;
     setBusy(true);
-    const e = await removeUser(profile.id);
+    const e = await deleteAccount(profile.id);
     setBusy(false);
     if (e) flash(setErr, e);
     else onBack();
