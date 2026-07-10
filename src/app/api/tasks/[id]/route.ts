@@ -57,6 +57,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.checklist = body.checklist;
   if (body.attachments !== undefined && Array.isArray(body.attachments))
     patch.attachments = body.attachments;
+  if (body.mapId !== undefined) patch.map_id = body.mapId ?? null;
+  if (body.mapNodeId !== undefined) patch.map_node_id = body.mapNodeId ?? null;
 
   if (Object.keys(patch).length === 0) return err("No valid fields to update");
 

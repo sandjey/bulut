@@ -167,6 +167,8 @@ export interface NewTaskInput {
   dueDate?: string | null;
   doneDueDate?: string | null;
   tags?: string[];
+  mapId?: string | null;
+  mapNodeId?: string | null;
 }
 
 interface StoreContextValue extends AppData {
@@ -494,6 +496,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         attachments: [],
         photos: [],
         order: Date.now(),
+        mapId: input.mapId ?? null,
+        mapNodeId: input.mapNodeId ?? null,
       };
       apply({ ...dataRef.current, tasks: [...dataRef.current.tasks, task] });
       if (userId) persist(db.insertTask(task, userId));

@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
+import { useNodeStats, useMapFilter } from "./MapContext";
+import { STATUS_META, type NodeStats } from "@/lib/map-stats";
 import type { MapNode, MapNodeKind, MapNodeData } from "@/lib/map-types";
 import { NODE_KIND_META } from "@/lib/map-types";
 import { BOARD_COLORS } from "@/lib/types";
@@ -176,10 +178,71 @@ function Toolbar({
   );
 }
 
+/** Бейдж статуса-светофора + счётчик задач в углу узла. */
+function StatusBadge({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
+  if (stats.total === 0 && !override) return null;
+  const meta = STATUS_META[stats.status];
+  const title =
+    `${meta.label}` +
+    (stats.total ? ` · задач: ${stats.total}` : "") +
+    (stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : "") +
+    (override ? " · вручную" : "");
+  return (
+    <div
+      className="nodrag absolute -right-2 -top-2 z-30 flex items-center gap-1 rounded-full border border-black/30 bg-surface px-1.5 py-0.5 text-[10px] font-bold shadow-md"
+      title={title}
+    >
+      <span
+        className={cn("h-2.5 w-2.5 rounded-full", stats.status === "bug" && "bulut-pulse")}
+        style={{ backgroundColor: meta.color, boxShadow: `0 0 6px ${meta.color}` }}
+      />
+      {stats.total > 0 && <span className="text-fg">{stats.total}</span>}
+    </div>
+  );
+}
+
+/** Мини-разбивка по этапам (полоски). */
+function StageBar({ stats }: { stats: NodeStats }) {
+  if (stats.total === 0) return null;
+  return (
+    <div className="mt-1 flex w-full items-center gap-1.5">
+      <div className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-black/25">
+        {stats.byStage.map((s) => (
+          <div
+            key={s.name}
+            title={`${s.name}: ${s.count}`}
+            style={{ width: `${(s.count / stats.total) * 100}%`, backgroundColor: "rgb(var(--brand))" }}
+          />
+        ))}
+      </div>
+      <span className="text-[9px] text-muted">
+        {stats.done}/{stats.total}
+      </span>
+    </div>
+  );
+}
+
 function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   const rf = useReactFlow();
   const canEdit = useCan()("map.edit");
+  const stats = useNodeStats(id, data.statusOverride);
+  const filter = useMapFilter();
   const kind = data.kind;
+  const matchesFilter =
+    filter === "all"
+      ? true
+      : kind === "note" || kind === "group"
+        ? false
+        : filter === "bug"
+          ? stats.status === "bug"
+          : filter === "work"
+            ? stats.status === "wip"
+            : filter === "ok"
+              ? stats.status === "ok"
+              : filter === "empty"
+                ? stats.total === 0
+                : true;
+  const dim = filter !== "all" && !matchesFilter ? "opacity-20 saturate-0 transition" : "transition";
   const color = data.color || NODE_KIND_META[kind]?.color || "#6366f1";
   const Icon = KIND_ICON[kind] ?? MousePointerClick;
   const isSelected = !!selected;
@@ -224,7 +287,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       <>
         {isSelected && toolbar}
         <div
-          className={cn("bulut-node min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand")}
+          className={cn("bulut-node min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand", dim)}
           style={{ background: withAlpha(color, 0.16), border: `1px solid ${withAlpha(color, 0.4)}` }}
         >
           <Handles color={color} />
@@ -248,7 +311,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       <>
         {isSelected && toolbar}
         <div
-          className={cn("bulut-node h-full min-h-[140px] w-full min-w-[200px] rounded-2xl border-2 border-dashed p-3", isSelected && "ring-2 ring-brand")}
+          className={cn("bulut-node h-full min-h-[140px] w-full min-w-[200px] rounded-2xl border-2 border-dashed p-3", isSelected && "ring-2 ring-brand", dim)}
           style={{ borderColor: withAlpha(color, 0.6), background: withAlpha(color, 0.05) }}
         >
           <Handles color={color} />
@@ -270,7 +333,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     return (
       <>
         {isSelected && toolbar}
-        <LinkNode id={id} data={data} selected={isSelected} color={color} />
+        <LinkNode id={id} data={data} selected={isSelected} color={color} stats={stats} dim={dim} />
         {resizer}
       </>
     );
@@ -299,10 +362,12 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
           "bulut-node group relative flex w-full flex-col items-center justify-center gap-1.5 border px-3.5 py-3 text-center backdrop-blur-sm",
           terminator ? "min-h-[52px] rounded-full" : "min-h-[70px] rounded-2xl",
           isSelected && "ring-2 ring-brand",
+          dim,
         )}
         style={cardStyle}
       >
         <Handles color={color} />
+        <StatusBadge stats={stats} override={data.statusOverride} />
         <span
           className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
           style={{
@@ -341,6 +406,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             <GitBranch className="h-2.5 w-2.5" /> да / нет
           </div>
         )}
+        <StageBar stats={stats} />
       </div>
       {resizer}
     </>
@@ -348,15 +414,18 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
 }
 
 function LinkNode({
-  id,
   data,
   selected,
   color,
+  stats,
+  dim,
 }: {
   id: string;
   data: MapNodeData;
   selected: boolean;
   color: string;
+  stats: NodeStats;
+  dim?: string;
 }) {
   const { boards, tasks } = useStore();
   const router = useRouter();
@@ -375,8 +444,9 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center backdrop-blur-sm",
+        "bulut-node relative flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center backdrop-blur-sm",
         selected && "ring-2 ring-brand",
+        dim,
       )}
       style={{
         background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,
@@ -387,6 +457,7 @@ function LinkNode({
       title="Двойной клик — открыть"
     >
       <Handles color={color} />
+      <StatusBadge stats={stats} override={data.statusOverride} />
       <span
         className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
         style={{ background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`, boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}` }}

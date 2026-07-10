@@ -42,7 +42,10 @@ import {
 import { useMaps } from "@/lib/maps";
 import { useCan } from "@/lib/access";
 import { useStore } from "@/lib/store";
+import { useRouter, useSearchParams } from "next/navigation";
 import { nodeTypes } from "./BulutNode";
+import { MapContext, useMapId, useNodeStats, type MapFilter } from "./MapContext";
+import { STATUS_META, computeNodeStats, type StatusOverride } from "@/lib/map-stats";
 import { tidyInPlace, exportPng, exportJson, parseImport } from "./mapUtils";
 import {
   NODE_KINDS,
@@ -53,7 +56,7 @@ import {
   type MapNodeKind,
   type ProjectMap,
 } from "@/lib/map-types";
-import { BOARD_COLORS } from "@/lib/types";
+import { BOARD_COLORS, type TaskType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function uid(): string {
@@ -120,8 +123,10 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(map.name);
   const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState<MapFilter>("all");
 
   const rf = useReactFlow();
+  const searchParams = useSearchParams();
   const wrapper = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const vpRef = useRef<Viewport>(map.graph.viewport ?? { x: 0, y: 0, zoom: 1 });
@@ -132,6 +137,19 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const edgesRef = useRef(edges);
   useEffect(() => void (nodesRef.current = nodes), [nodes]);
   useEffect(() => void (edgesRef.current = edges), [edges]);
+
+  // Фокус на узле по ?focus=<nodeId> (переход с задачи «Открыть на карте»)
+  const focusedOnce = useRef(false);
+  useEffect(() => {
+    if (focusedOnce.current) return;
+    const fid = searchParams.get("focus");
+    if (!fid) return;
+    if (!nodesRef.current.some((n) => n.id === fid)) return;
+    focusedOnce.current = true;
+    setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === fid })));
+    setSelNodeId(fid);
+    setTimeout(() => rf.fitView({ nodes: [{ id: fid }], duration: 500, maxZoom: 1.3, padding: 0.5 }), 150);
+  }, [searchParams, setNodes, rf]);
 
   // ── История (undo/redo) ──
   const past = useRef<Snap[]>([]);
@@ -372,6 +390,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   };
 
   return (
+    <MapContext.Provider value={{ mapId: map.id, filter }}>
     <div className="bulut-map-root flex h-full flex-col bg-bg">
       {/* Toolbar */}
       <div className="z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface/80 px-3 py-2 backdrop-blur">
@@ -451,6 +470,8 @@ function EditorInner({ map }: { map: ProjectMap }) {
         </div>
       </div>
 
+      <HealthStrip nodes={nodes} mapId={map.id} filter={filter} setFilter={setFilter} />
+
       {/* Canvas */}
       <div className="relative flex min-h-0 flex-1">
         {canEdit && <Palette onAdd={addNode} />}
@@ -518,6 +539,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
         )}
       </div>
     </div>
+    </MapContext.Provider>
   );
 }
 
@@ -541,6 +563,70 @@ function ToolbarBtn({
     >
       {children}
     </button>
+  );
+}
+
+/* ---------------- Плашка «Здоровье флоу» ---------------- */
+
+function HealthStrip({
+  nodes,
+  mapId,
+  filter,
+  setFilter,
+}: {
+  nodes: MapNode[];
+  mapId: string;
+  filter: MapFilter;
+  setFilter: (f: MapFilter) => void;
+}) {
+  const { tasks, boards } = useStore();
+  const agg = useMemo(() => {
+    const c = { ok: 0, wip: 0, bug: 0, empty: 0 };
+    let totalTasks = 0;
+    let totalBugs = 0;
+    let taskNodes = 0;
+    for (const n of nodes) {
+      const kind = n.data?.kind;
+      if (kind === "note" || kind === "group") continue;
+      taskNodes++;
+      const s = computeNodeStats(tasks, boards, mapId, n.id, n.data?.statusOverride);
+      c[s.status] += 1;
+      totalTasks += s.total;
+      totalBugs += s.bugsOpen;
+    }
+    return { ...c, totalTasks, totalBugs, taskNodes };
+  }, [nodes, tasks, boards, mapId]);
+
+  if (agg.taskNodes === 0) return null;
+
+  const pill = (key: MapFilter, label: string, color: string, count: number) => (
+    <button
+      onClick={() => setFilter(filter === key ? "all" : key)}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition",
+        filter === key ? "border-brand bg-brand/15 text-fg" : "border-border text-muted hover:bg-surface-2",
+      )}
+    >
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} /> {label} {count}
+    </button>
+  );
+
+  return (
+    <div className="z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface/50 px-3 py-1.5 text-xs backdrop-blur">
+      <span className="font-semibold text-muted">Здоровье:</span>
+      {pill("ok", "Работает", STATUS_META.ok.color, agg.ok)}
+      {pill("work", "В работе", STATUS_META.wip.color, agg.wip)}
+      {pill("bug", "Баги", STATUS_META.bug.color, agg.bug)}
+      {pill("empty", "Пустые", STATUS_META.empty.color, agg.empty)}
+      <span className="ml-auto text-faint">
+        задач: {agg.totalTasks} · открытых багов: {agg.totalBugs}
+      </span>
+      {filter !== "all" && (
+        <button onClick={() => setFilter("all")} className="text-brand underline">
+          сбросить фильтр
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -635,10 +721,148 @@ function NodeInspector({
 
       {isLink && <LinkPicker data={data} onChange={onChange} />}
 
+      {data.kind !== "note" && data.kind !== "group" && (
+        <NodeTasksPanel node={node} onChange={onChange} />
+      )}
+
       <div className="mt-4 flex gap-2">
         <button onClick={onDuplicate} className="btn-outline flex-1 justify-center"><Copy className="h-4 w-4" /> Дубль</button>
         <button onClick={onDelete} className="btn-ghost flex-1 justify-center text-red-500 hover:bg-red-500/10"><Trash2 className="h-4 w-4" /> Удалить</button>
       </div>
+    </div>
+  );
+}
+
+/** Панель «Задачи экрана»: статус (ручной/авто), список задач, быстрое создание. */
+function NodeTasksPanel({
+  node,
+  onChange,
+}: {
+  node: MapNode;
+  onChange: (p: Partial<MapNode["data"]>) => void;
+}) {
+  const stats = useNodeStats(node.id, node.data.statusOverride);
+  const mapId = useMapId();
+  const { boards, createTask } = useStore();
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [ntTitle, setNtTitle] = useState("");
+  const [ntBoard, setNtBoard] = useState(boards[0]?.id ?? "");
+  const [ntType, setNtType] = useState<TaskType>("task");
+
+  const overrides: { key: StatusOverride | undefined; label: string }[] = [
+    { key: undefined, label: "Авто" },
+    { key: "ok", label: "🟢" },
+    { key: "wip", label: "🟡" },
+    { key: "bug", label: "🔴" },
+  ];
+
+  const addTask = () => {
+    const b = boards.find((x) => x.id === ntBoard);
+    if (!b || !ntTitle.trim() || !mapId) return;
+    createTask({
+      boardId: b.id,
+      columnId: b.columns[0]?.id ?? "",
+      title: ntTitle.trim(),
+      type: ntType,
+      mapId,
+      mapNodeId: node.id,
+    });
+    setNtTitle("");
+    setAdding(false);
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-2.5">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted">Статус экрана</span>
+        <span className="text-[10px] font-semibold" style={{ color: STATUS_META[stats.status].color }}>
+          ● {STATUS_META[stats.status].label}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        {overrides.map((o) => (
+          <button
+            key={o.label}
+            onClick={() => onChange({ statusOverride: o.key })}
+            className={cn(
+              "rounded-md border px-1 py-1 text-[11px] transition",
+              (node.data.statusOverride ?? undefined) === o.key
+                ? "border-brand bg-brand/10 text-fg"
+                : "border-border text-muted hover:bg-surface-2",
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-2 flex items-center gap-3 text-[11px] text-muted">
+        <span>задач: <b className="text-fg">{stats.total}</b></span>
+        {stats.bugsOpen > 0 && <span className="text-red-500">багов: {stats.bugsOpen}</span>}
+        <span className="ml-auto">готово: {stats.done}/{stats.total}</span>
+      </div>
+
+      <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+        {stats.tasks.map((t) => {
+          const b = boards.find((x) => x.id === t.boardId);
+          const col = b?.columns.find((c) => c.id === t.columnId);
+          const dot =
+            t.type === "bug" && t.status !== "done"
+              ? "#ef4444"
+              : t.status === "done"
+                ? "#10b981"
+                : "#f59e0b";
+          return (
+            <button
+              key={t.id}
+              onClick={() => router.push(`/board/${t.boardId}?task=${t.id}`)}
+              className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1 text-left text-xs hover:bg-surface-2"
+              title={`${col?.name ?? ""} · ${t.assignee || "без исполнителя"}`}
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              <span className="shrink-0 text-[9px] text-faint">{col?.name}</span>
+            </button>
+          );
+        })}
+        {stats.tasks.length === 0 && <p className="py-1 text-[11px] text-faint">Нет задач на этом экране</p>}
+      </div>
+
+      {adding ? (
+        <div className="mt-2 space-y-1">
+          <input
+            autoFocus
+            className="input py-1 text-xs"
+            placeholder="Название задачи"
+            value={ntTitle}
+            onChange={(e) => setNtTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+          />
+          <div className="flex gap-1">
+            <select className="input py-1 text-xs" value={ntBoard} onChange={(e) => setNtBoard(e.target.value)}>
+              {boards.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            <select className="input w-24 py-1 text-xs" value={ntType} onChange={(e) => setNtType(e.target.value as TaskType)}>
+              <option value="task">Задача</option>
+              <option value="bug">Баг</option>
+              <option value="feature">Фича</option>
+            </select>
+          </div>
+          <div className="flex gap-1">
+            <button className="btn-primary flex-1 py-1 text-xs" disabled={!ntTitle.trim()} onClick={addTask}>
+              Создать
+            </button>
+            <button className="btn-ghost py-1 text-xs" onClick={() => setAdding(false)}>Отмена</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="btn-outline mt-2 w-full justify-center py-1 text-xs">
+          <Plus className="h-3.5 w-3.5" /> Задача на этот экран
+        </button>
+      )}
     </div>
   );
 }

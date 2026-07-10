@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Trash2, UserPlus } from "lucide-react";
+import Link from "next/link";
+import { Trash2, UserPlus, Waypoints, ExternalLink, AlertTriangle } from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
 import { AssigneePicker } from "./AssigneePicker";
@@ -11,6 +12,7 @@ import { PhotoUploader } from "./PhotoUploader";
 import { AutoTextarea } from "./AutoTextarea";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
+import { useMaps } from "@/lib/maps";
 import {
   Board,
   Priority,
@@ -54,8 +56,26 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   const [doneDueDate, setDoneDueDate] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [columnId, setColumnId] = useState("");
+  const [mapId, setMapId] = useState<string>("");
+  const [mapNodeId, setMapNodeId] = useState<string>("");
 
   const allTags = useMemo(() => uniqueTags(tasks), [tasks]);
+
+  const { maps } = useMaps();
+  const selectedMap = useMemo(() => maps.find((m) => m.id === mapId) ?? null, [maps, mapId]);
+  // Узлы-«экраны» карты (без заметок и групп) для выбора привязки.
+  const mapNodes = useMemo(
+    () =>
+      (selectedMap?.graph.nodes ?? []).filter(
+        (n) => n.data?.kind !== "note" && n.data?.kind !== "group",
+      ),
+    [selectedMap],
+  );
+  const linkedNode = useMemo(
+    () => mapNodes.find((n) => n.id === mapNodeId) ?? null,
+    [mapNodes, mapNodeId],
+  );
+  const nodeMissing = !!mapId && !!mapNodeId && !linkedNode;
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +89,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setDoneDueDate(task.doneDueDate ?? "");
       setTags(task.tags);
       setColumnId(task.columnId);
+      setMapId(task.mapId ?? "");
+      setMapNodeId(task.mapNodeId ?? "");
     } else {
       setTitle("");
       setDesc("");
@@ -79,6 +101,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setDoneDueDate("");
       setTags([]);
       setColumnId(defaultColumnId ?? board.columns[0]?.id ?? "");
+      setMapId("");
+      setMapNodeId("");
     }
   }, [open, task, defaultColumnId, board.columns]);
 
@@ -95,6 +119,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         doneDueDate: doneDueDate || null,
         tags,
         columnId,
+        mapId: mapId || null,
+        mapNodeId: mapId ? mapNodeId || null : null,
       });
     } else {
       createTask({
@@ -108,6 +134,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         dueDate: dueDate || null,
         doneDueDate: doneDueDate || null,
         tags,
+        mapId: mapId || null,
+        mapNodeId: mapId ? mapNodeId || null : null,
       });
     }
     onClose();
@@ -284,6 +312,71 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
             />
           </div>
         </div>
+
+        {/* Bulut MAP: привязка задачи к экрану карты */}
+        {maps.length > 0 && (
+          <div className="rounded-xl border border-teal-500/25 bg-teal-500/[0.05] p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-400">
+              <Waypoints className="h-3.5 w-3.5" /> Экран на карте (необязательно)
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <select
+                className="input"
+                value={mapId}
+                onChange={(e) => {
+                  setMapId(e.target.value);
+                  setMapNodeId("");
+                }}
+              >
+                <option value="">— карта не выбрана —</option>
+                {maps.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input"
+                value={mapNodeId}
+                onChange={(e) => setMapNodeId(e.target.value)}
+                disabled={!mapId}
+              >
+                <option value="">— экран —</option>
+                {nodeMissing && <option value={mapNodeId}>⚠ экран удалён</option>}
+                {mapNodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {(n.data?.label as string) || "Без названия"}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {mapId && mapNodeId && (
+              nodeMissing ? (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Экран удалён из карты.
+                  <button
+                    type="button"
+                    className="ml-auto underline"
+                    onClick={() => {
+                      setMapId("");
+                      setMapNodeId("");
+                    }}
+                  >
+                    Очистить
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  href={`/maps/${mapId}?focus=${mapNodeId}`}
+                  onClick={onClose}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs text-teal-600 hover:underline dark:text-teal-400"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Открыть на карте: {(linkedNode?.data?.label as string) || "экран"}
+                </Link>
+              )
+            )}
+          </div>
+        )}
 
         <div>
           <label className="label">Теги</label>

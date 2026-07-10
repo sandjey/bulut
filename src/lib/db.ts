@@ -55,6 +55,8 @@ interface TaskRow {
   checklist: import("./types").ChecklistItem[];
   attachments: import("./types").Attachment[];
   photos: import("./types").TaskPhoto[];
+  map_id: string | null;
+  map_node_id: string | null;
 }
 
 interface CommentRow {
@@ -126,6 +128,8 @@ const toTask = (r: TaskRow): Task => ({
   attachments: r.attachments ?? [],
   photos: r.photos ?? [],
   order: r.position,
+  mapId: r.map_id ?? null,
+  mapNodeId: r.map_node_id ?? null,
 });
 
 const toComment = (r: CommentRow): TaskComment => ({
@@ -279,6 +283,8 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.checklist !== undefined) row.checklist = patch.checklist;
   if (patch.attachments !== undefined) row.attachments = patch.attachments;
   if (patch.photos !== undefined) row.photos = patch.photos;
+  if (patch.mapId !== undefined) row.map_id = patch.mapId;
+  if (patch.mapNodeId !== undefined) row.map_node_id = patch.mapNodeId;
   const { error } = await client().from("tasks").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -325,6 +331,8 @@ function taskToRow(t: Task, userId: string) {
     checklist: t.checklist ?? [],
     attachments: t.attachments ?? [],
     photos: t.photos ?? [],
+    map_id: t.mapId ?? null,
+    map_node_id: t.mapNodeId ?? null,
   };
 }
 

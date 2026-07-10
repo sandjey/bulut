@@ -24,6 +24,8 @@ export interface MapNodeData extends Record<string, unknown> {
   color?: string; // акцентный цвет узла (hex)
   kind: MapNodeKind;
   link?: MapNodeLink;
+  /** Ручной override статуса-светофора (undefined = авто из задач). */
+  statusOverride?: "ok" | "wip" | "bug";
 }
 
 export type MapNode = Node<MapNodeData>;

@@ -43,6 +43,8 @@ export async function GET(req: NextRequest) {
   // ─── Filters ────────────────────────────────────────────────────────────────
   if (q.get("boardId"))   query = query.eq("board_id",   q.get("boardId")!);
   if (q.get("columnId"))  query = query.eq("column_id",  q.get("columnId")!);
+  if (q.get("mapId"))     query = query.eq("map_id",     q.get("mapId")!);
+  if (q.get("mapNodeId")) query = query.eq("map_node_id", q.get("mapNodeId")!);
   if (q.get("status"))    query = query.eq("status",     q.get("status")!);
   if (q.get("priority"))  query = query.eq("priority",   q.get("priority")!);
   if (q.get("type"))      query = query.eq("type",       q.get("type")!);
@@ -183,6 +185,8 @@ export async function POST(req: NextRequest) {
     return_count:     0,
     stage_times:      {},
     created_at:       now,
+    map_id:           (body.mapId as string | undefined) ?? null,
+    map_node_id:      (body.mapNodeId as string | undefined) ?? null,
   };
 
   const { data, error } = await db.from("tasks").insert(row).select().single();
@@ -217,5 +221,7 @@ function toTaskResponse(row: Record<string, unknown>) {
     completedAt:    row.completed_at ?? null,
     readyAt:        row.ready_at ?? null,
     testedAt:       row.tested_at ?? null,
+    mapId:          row.map_id ?? null,
+    mapNodeId:      row.map_node_id ?? null,
   };
 }

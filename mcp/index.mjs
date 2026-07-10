@@ -203,6 +203,39 @@ server.tool("delete_flow", "Удалить карту по id.", { id: z.string(
   return { content: [{ type: "text", text: `Карта ${id} удалена.` }] };
 });
 
+server.tool(
+  "link_task_to_node",
+  "Привязать задачу к экрану (узлу) карты — задача появится на узле, светофор обновится.",
+  { taskId: z.string(), mapId: z.string(), nodeId: z.string() },
+  async ({ taskId, mapId, nodeId }) => {
+    await api(`/api/tasks/${taskId}`, "PATCH", { mapId, mapNodeId: nodeId });
+    return { content: [{ type: "text", text: `Задача ${taskId} привязана к экрану ${nodeId}.` }] };
+  },
+);
+
+server.tool(
+  "map_health",
+  "Здоровье карты: статус каждого экрана по задачам (🔴 баг · 🟡 в работе · 🟢 готово · ⚪ пусто).",
+  { mapId: z.string() },
+  async ({ mapId }) => {
+    const map = await api(`/api/maps/${mapId}`);
+    const tasksRes = await api(`/api/tasks?mapId=${mapId}&limit=200`);
+    const tasks = tasksRes.data ?? [];
+    const nodes = (map.graph?.nodes ?? []).filter(
+      (n) => n.data?.kind !== "note" && n.data?.kind !== "group",
+    );
+    const emoji = { empty: "⚪", ok: "🟢", wip: "🟡", bug: "🔴" };
+    const lines = nodes.map((n) => {
+      const linked = tasks.filter((t) => t.mapNodeId === n.id);
+      const bugs = linked.filter((t) => t.type === "bug" && t.status !== "done").length;
+      const active = linked.filter((t) => t.status !== "done").length;
+      const status = n.data?.statusOverride ?? (linked.length === 0 ? "empty" : bugs > 0 ? "bug" : active > 0 ? "wip" : "ok");
+      return `${emoji[status] ?? "⚪"} ${n.data?.label || "экран"} — задач: ${linked.length}${bugs ? `, багов: ${bugs}` : ""}`;
+    });
+    return { content: [{ type: "text", text: [`Карта «${map.name ?? mapId}»`, ...lines].join("\n") || "Нет экранов." }] };
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("bulut-map MCP запущен");

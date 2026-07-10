@@ -87,6 +87,42 @@ const handler = createMcpHandler(
       await api(`/api/maps/${id}`, "DELETE");
       return { content: [{ type: "text", text: `Карта ${id} удалена.` }] };
     });
+
+    server.tool(
+      "link_task_to_node",
+      "Привязать задачу к экрану (узлу) карты: задача появится на этом узле, статус-светофор обновится.",
+      { taskId: z.string(), mapId: z.string(), nodeId: z.string() },
+      async ({ taskId, mapId, nodeId }) => {
+        await api(`/api/tasks/${taskId}`, "PATCH", { mapId, mapNodeId: nodeId });
+        return { content: [{ type: "text", text: `Задача ${taskId} привязана к экрану ${nodeId}.` }] };
+      },
+    );
+
+    server.tool(
+      "map_health",
+      "Здоровье карты: статус каждого экрана по задачам (🔴 открытый баг · 🟡 в работе · 🟢 готово · ⚪ нет задач).",
+      { mapId: z.string() },
+      async ({ mapId }) => {
+        const map = (await api(`/api/maps/${mapId}`)) as { name?: string; graph?: { nodes?: Array<Record<string, unknown>> } };
+        const tasksRes = (await api(`/api/tasks?mapId=${mapId}&limit=200`)) as { data?: Array<Record<string, unknown>> };
+        const tasks = tasksRes.data ?? [];
+        const nodes = (map.graph?.nodes ?? []).filter((n) => {
+          const kind = (n.data as { kind?: string })?.kind;
+          return kind !== "note" && kind !== "group";
+        });
+        const emoji: Record<string, string> = { empty: "⚪", ok: "🟢", wip: "🟡", bug: "🔴" };
+        const lines = nodes.map((n) => {
+          const d = n.data as { label?: string; statusOverride?: string };
+          const linked = tasks.filter((t) => t.mapNodeId === n.id);
+          const bugs = linked.filter((t) => t.type === "bug" && t.status !== "done").length;
+          const active = linked.filter((t) => t.status !== "done").length;
+          const status = d.statusOverride ?? (linked.length === 0 ? "empty" : bugs > 0 ? "bug" : active > 0 ? "wip" : "ok");
+          return `${emoji[status] ?? "⚪"} ${d.label || "экран"} — задач: ${linked.length}${bugs ? `, багов: ${bugs}` : ""}`;
+        });
+        const header = `Карта «${map.name ?? mapId}» — экранов: ${nodes.length}`;
+        return { content: [{ type: "text", text: [header, ...lines].join("\n") || "Нет экранов." }] };
+      },
+    );
   },
   {},
   { basePath: "/api" },

@@ -68,6 +68,8 @@ export interface Task {
   attachments: Attachment[]; // ссылки/файлы
   photos: TaskPhoto[]; // фото (base64) — удаляются при переходе в «Готово»
   order: number; // ordering within a column
+  mapId: string | null; // Bulut MAP: к какой карте привязана задача
+  mapNodeId: string | null; // Bulut MAP: id узла-экрана в графе карты
 }
 
 /** Одно событие возврата карточки на доработку. */

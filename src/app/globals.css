@@ -516,3 +516,10 @@ body {
 }
 .bulut-flow .react-flow__attribution { background: transparent; color: rgb(var(--faint)); font-size: 10px; }
 .bulut-flow .react-flow__attribution a { color: rgb(var(--faint)); }
+
+/* Bulut MAP — пульс красного индикатора статуса узла */
+@keyframes bulutPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+.bulut-pulse { animation: bulutPulse 1.4s ease-out infinite; }
