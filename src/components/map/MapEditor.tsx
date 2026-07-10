@@ -429,7 +429,9 @@ function EditorInner({ map }: { map: ProjectMap }) {
             minZoom={0.2}
             maxZoom={2}
           >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgb(var(--border))" />
+            {/* Сетка: крупные линии + мелкие точки — как дизайн-канвас */}
+            <Background id="grid" variant={BackgroundVariant.Lines} gap={100} lineWidth={1} color="rgb(var(--border) / 0.55)" />
+            <Background id="dots" variant={BackgroundVariant.Dots} gap={20} size={1} color="rgb(var(--border) / 0.9)" />
             <Controls showInteractive={false} />
             <MiniMap
               pannable

@@ -261,18 +261,37 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   const terminator = kind === "terminator";
   const decision = kind === "decision";
 
+  const cardStyle: React.CSSProperties = terminator
+    ? {
+        background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.72)})`,
+        borderColor: "transparent",
+        boxShadow: `0 12px 28px -10px ${withAlpha(color, 0.65)}`,
+      }
+    : {
+        background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,
+        borderColor: isSelected ? "transparent" : withAlpha(color, 0.3),
+        boxShadow: `0 12px 30px -16px ${withAlpha(color, 0.55)}`,
+      };
+
   return (
     <>
       {isSelected && toolbar}
       <div
         className={cn(
-          "bulut-node group relative flex min-w-[172px] max-w-[280px] items-start gap-2.5 border bg-surface px-3.5 py-2.5 shadow-lg",
-          terminator ? "rounded-full" : "rounded-2xl",
-          isSelected ? "ring-2 ring-brand border-transparent" : "border-border hover:border-border-strong",
+          "bulut-node group relative flex min-w-[176px] max-w-[288px] gap-2.5 border px-3.5 py-2.5 backdrop-blur-sm",
+          terminator ? "items-center rounded-full" : "items-start rounded-2xl",
+          isSelected && "ring-2 ring-brand",
         )}
+        style={cardStyle}
       >
         <Handles color={color} />
-        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: withAlpha(color, 0.16), color }}>
+        <span
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
+          style={{
+            background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`,
+            boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}`,
+          }}
+        >
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -281,27 +300,24 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             editable={canEdit}
             placeholder={NODE_KIND_META[kind]?.label ?? "Узел"}
             onCommit={(v) => patch({ label: v })}
-            className="text-sm font-semibold leading-snug text-fg"
+            className={cn("text-sm font-semibold leading-snug", terminator ? "text-white" : "text-fg")}
           />
-          {(data.description || decision) && (
+          {(data.description || (decision && canEdit)) && (
             <EditableText
               value={data.description ?? ""}
               editable={canEdit}
               multiline
               placeholder="описание…"
               onCommit={(v) => patch({ description: v })}
-              className="mt-0.5 text-xs text-muted"
+              className={cn("mt-0.5 text-xs", terminator ? "text-white/80" : "text-muted")}
             />
           )}
           {decision && (
-            <div className="mt-1 inline-flex rounded bg-amber-500/10 px-1.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-              да / нет
+            <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+              <GitBranch className="h-2.5 w-2.5" /> да / нет
             </div>
           )}
         </div>
-        {!terminator && (
-          <span className="absolute left-0 top-2 h-[calc(100%-1rem)] w-1 rounded-full" style={{ backgroundColor: color }} />
-        )}
       </div>
     </>
   );
@@ -335,15 +351,23 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node flex w-[224px] items-center gap-2.5 rounded-2xl border bg-surface px-3 py-2.5 shadow-lg",
-        selected ? "ring-2 ring-brand border-transparent" : "border-border hover:border-border-strong",
+        "bulut-node flex w-[228px] items-center gap-2.5 rounded-2xl border px-3 py-2.5 backdrop-blur-sm",
+        selected && "ring-2 ring-brand",
       )}
+      style={{
+        background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,
+        borderColor: selected ? "transparent" : withAlpha(color, 0.3),
+        boxShadow: `0 12px 30px -16px ${withAlpha(color, 0.55)}`,
+      }}
       onDoubleClick={open}
       title="Двойной клик — открыть"
     >
       <Handles color={color} />
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg" style={{ backgroundColor: withAlpha(color, 0.16), color }}>
-        {missing ? <AlertTriangle className="h-4 w-4 text-amber-500" /> : <ExternalLink className="h-4 w-4" />}
+      <span
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
+        style={{ background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`, boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}` }}
+      >
+        {missing ? <AlertTriangle className="h-4 w-4 text-white" /> : <ExternalLink className="h-4 w-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-fg">{title}</div>
