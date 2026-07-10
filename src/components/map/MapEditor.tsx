@@ -12,6 +12,7 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+  reconnectEdge,
   useReactFlow,
   MarkerType,
   ConnectionLineType,
@@ -172,6 +173,31 @@ function EditorInner({ map }: { map: ProjectMap }) {
       setEdges((eds) => addEdge({ ...c, ...edgeDefaults, id: uid() }, eds));
     },
     [canEdit, setEdges, snapshot],
+  );
+
+  // Перецепить существующую стрелку: схватить её конец и перетащить на другой узел/сторону.
+  const reconnectOk = useRef(true);
+  const onReconnectStart = useCallback(() => {
+    reconnectOk.current = false;
+  }, []);
+  const onReconnect = useCallback(
+    (oldEdge: MapEdge, newConn: Connection) => {
+      if (!canEdit) return;
+      reconnectOk.current = true;
+      snapshot();
+      setEdges((els) => reconnectEdge(oldEdge, newConn, els) as MapEdge[]);
+    },
+    [canEdit, setEdges, snapshot],
+  );
+  const onReconnectEnd = useCallback(
+    (_: unknown, edge: MapEdge) => {
+      // если бросили в пустоту — удаляем стрелку
+      if (!reconnectOk.current) {
+        setEdges((els) => els.filter((e) => e.id !== edge.id));
+      }
+      reconnectOk.current = true;
+    },
+    [setEdges],
   );
 
   const onSelectionChange = useCallback((p: OnSelectionChangeParams) => {
@@ -430,6 +456,10 @@ function EditorInner({ map }: { map: ProjectMap }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
+            reconnectRadius={20}
             onSelectionChange={onSelectionChange}
             onNodeDragStart={snapshot}
             onMoveEnd={(_, vp) => (vpRef.current = vp)}
