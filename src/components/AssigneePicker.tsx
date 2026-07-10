@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronsUpDown, UserPlus, User, X, Users } from "lucide-react";
 import { Avatar } from "./Avatar";
-import { useStore } from "@/lib/store";
 import { useTeam } from "@/lib/team";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +19,6 @@ export function AssigneePicker({
   compact = false,
   placeholder = "Выберите исполнителя",
 }: AssigneePickerProps) {
-  const { addMember } = useStore();
   const team = useTeam();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -50,10 +48,8 @@ export function AssigneePicker({
     setQuery("");
   };
 
-  const create = () => {
-    const m = addMember(query.trim());
-    if (m) pick(m.name);
-  };
+  // Назначаем введённое имя как есть (без создания записи в отдельной таблице).
+  const create = () => pick(query.trim());
 
   return (
     <div className="relative" ref={ref}>
@@ -133,12 +129,7 @@ export function AssigneePicker({
               >
                 <Avatar name={m.name} size={26} />
                 <span className="min-w-0 flex-1 text-left">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate font-medium">{m.name}</span>
-                    {m.isAccount && (
-                      <span className="rounded bg-brand/10 px-1 text-[10px] font-medium text-brand">аккаунт</span>
-                    )}
-                  </span>
+                  <span className="block truncate font-medium">{m.name}</span>
                   {m.role && <span className="block truncate text-xs text-muted">{m.role}</span>}
                 </span>
                 {value === m.name && <Check className="h-4 w-4 text-brand" />}
@@ -152,16 +143,14 @@ export function AssigneePicker({
                 className="flex w-full items-center gap-2 border-t border-border px-2 py-2 text-sm text-brand transition hover:bg-surface-2"
               >
                 <UserPlus className="h-4 w-4" />
-                Добавить участника «{query.trim()}»
+                Назначить «{query.trim()}»
               </button>
             )}
 
             {filtered.length === 0 && !canCreate && (
               <div className="px-3 py-4 text-center text-xs text-muted">
                 <Users className="mx-auto mb-1 h-5 w-5 opacity-50" />
-                {team.length === 0
-                  ? "В команде пока нет участников. Введите имя, чтобы добавить."
-                  : "Не найдено"}
+                {team.length === 0 ? "В команде пока нет участников." : "Не найдено"}
               </div>
             )}
           </div>

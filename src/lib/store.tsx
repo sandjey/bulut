@@ -292,7 +292,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, scheduleRefetch)
       .on("postgres_changes", { event: "*", schema: "public", table: "journal" }, scheduleRefetch)
       .on("postgres_changes", { event: "*", schema: "public", table: "task_comments" }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, scheduleRefetch)
       .subscribe();
 
     return () => {
