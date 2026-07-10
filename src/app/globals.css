@@ -446,8 +446,9 @@ body {
 
 /* Ручки-точки */
 .bulut-flow .react-flow__handle {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
+  z-index: 20; /* всегда поверх содержимого узла (иконки/текста), чтобы ловились с любой стороны */
   background: rgb(var(--surface));
   border: 1.5px solid rgb(var(--border-strong));
   border-radius: 9999px;
