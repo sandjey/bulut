@@ -56,6 +56,68 @@ export function tidyInPlace(nodes: MapNode[], grid = 20, thresh = 52): MapNode[]
   }));
 }
 
+/**
+ * Разводит вертикальные наложения В КОЛОНКАХ: если карточка выросла и налезает
+ * на нижнюю — двигает нижние вниз, сохраняя минимальный зазор. Только вниз,
+ * порядок сохраняется. Идемпотентно (повторный вызов ничего не меняет).
+ */
+export function resolveOverlaps(
+  nodes: MapNode[],
+  captionIds?: Set<string>,
+  minGap = 22,
+  colThresh = 140,
+): MapNode[] {
+  // высота карточки + запас под статус-подпись (она висит снаружи снизу)
+  const heightOf = (n: MapNode) => {
+    const h =
+      n.measured?.height ??
+      (n.height as number | undefined) ??
+      (typeof n.style?.height === "number" ? n.style.height : undefined) ??
+      72;
+    return h + (captionIds?.has(n.id) ? 42 : 0);
+  };
+
+  // Группируем по колонкам (близкие по X). Группы-контейнеры не трогаем.
+  const items = nodes.filter((n) => n.data?.kind !== "group");
+  const sortedX = [...items].sort((a, b) => a.position.x - b.position.x);
+  const colOf = new Map<string, number>();
+  let anchor: number | null = null;
+  let idx = -1;
+  for (const n of sortedX) {
+    if (anchor === null || n.position.x - anchor > colThresh) {
+      anchor = n.position.x;
+      idx++;
+    }
+    colOf.set(n.id, idx);
+  }
+
+  const columns = new Map<number, MapNode[]>();
+  for (const n of items) {
+    const ci = colOf.get(n.id)!;
+    if (!columns.has(ci)) columns.set(ci, []);
+    columns.get(ci)!.push(n);
+  }
+
+  const moved = new Map<string, number>();
+  for (const list of columns.values()) {
+    list.sort((a, b) => a.position.y - b.position.y);
+    let prevBottom = -Infinity;
+    for (const n of list) {
+      let y = n.position.y;
+      if (y < prevBottom + minGap) {
+        y = prevBottom + minGap;
+        if (Math.abs(y - n.position.y) > 0.5) moved.set(n.id, y);
+      }
+      prevBottom = y + heightOf(n);
+    }
+  }
+
+  if (moved.size === 0) return nodes;
+  return nodes.map((n) =>
+    moved.has(n.id) ? { ...n, position: { x: n.position.x, y: moved.get(n.id)! } } : n,
+  );
+}
+
 function download(dataUrl: string, name: string) {
   const a = document.createElement("a");
   a.href = dataUrl;

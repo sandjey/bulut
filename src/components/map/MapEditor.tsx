@@ -46,7 +46,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { nodeTypes } from "./BulutNode";
 import { MapContext, useMapId, useNodeStats, type MapFilter } from "./MapContext";
 import { STATUS_META, computeNodeStats, type StatusOverride } from "@/lib/map-stats";
-import { tidyInPlace, exportPng, exportJson, parseImport } from "./mapUtils";
+import { tidyInPlace, resolveOverlaps, exportPng, exportJson, parseImport } from "./mapUtils";
 import {
   NODE_KINDS,
   NODE_KIND_META,
@@ -114,6 +114,7 @@ export function MapEditor({ map }: { map: ProjectMap }) {
 
 function EditorInner({ map }: { map: ProjectMap }) {
   const { renameMap, setMapColor, saveGraph } = useMaps();
+  const { tasks: mapTasks } = useStore();
   const canEdit = useCan()("map.edit");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>((map.graph.nodes ?? []).map(withSize));
@@ -230,6 +231,49 @@ function EditorInner({ map }: { map: ProjectMap }) {
     setSelNodeId(p.nodes[0]?.id ?? null);
     setSelEdgeId(p.edges[0]?.id ?? null);
   }, []);
+
+  // Авто-раздвижение: двигаем нижние карточки в колонке вниз, сохраняя минимальный
+  // зазор, чтобы карточки и статус-подписи не налезали друг на друга.
+  const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doResolve = useCallback(() => {
+    setNodes((ns) => {
+      const captionIds = new Set<string>();
+      for (const n of ns) {
+        if (n.data?.statusOverride || mapTasks.some((t) => t.mapId === map.id && t.mapNodeId === n.id)) {
+          captionIds.add(n.id);
+        }
+      }
+      return resolveOverlaps(ns, captionIds);
+    });
+  }, [setNodes, mapTasks, map.id]);
+  const scheduleResolve = useCallback(() => {
+    if (resolveTimer.current) clearTimeout(resolveTimer.current);
+    resolveTimer.current = setTimeout(doResolve, 150);
+  }, [doResolve]);
+
+  const handleNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      onNodesChange(changes);
+      if (changes.some((c) => c.type === "dimensions")) scheduleResolve();
+    },
+    [onNodesChange, scheduleResolve],
+  );
+
+  // Появилась/исчезла статус-подпись (добавили/убрали задачу или ручной статус) —
+  // размер карточки не меняется, поэтому раздвигаем по смене набора «подписных» узлов.
+  const captionSig = useMemo(() => {
+    if (!canEdit) return "";
+    return nodes
+      .filter((n) => n.data?.statusOverride || mapTasks.some((t) => t.mapId === map.id && t.mapNodeId === n.id))
+      .map((n) => n.id)
+      .sort()
+      .join(",");
+  }, [nodes, mapTasks, map.id, canEdit]);
+  useEffect(() => {
+    if (!canEdit || !captionSig) return;
+    scheduleResolve();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captionSig]);
 
   const makeNode = (kind: MapNodeKind, pos: { x: number; y: number }): MapNode => {
     const meta = NODE_KIND_META[kind];
@@ -482,7 +526,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onReconnect={onReconnect}
