@@ -9,7 +9,11 @@ export type MapNodeKind =
   | "process" // процесс / шаг
   | "note" // заметка / стикер
   | "group" // контейнер / зона
+  | "number" // крупный номер (нумерация флоу)
   | "link"; // ссылка на доску / задачу
+
+/** Анимация узла. */
+export type NodeAnim = "none" | "pulse" | "bounce" | "float" | "glow";
 
 export interface MapNodeLink {
   boardId?: string;
@@ -26,6 +30,8 @@ export interface MapNodeData extends Record<string, unknown> {
   link?: MapNodeLink;
   /** Ручной override статуса-светофора (undefined = авто из задач). */
   statusOverride?: "ok" | "wip" | "bug";
+  /** Анимация узла (undefined = без анимации). */
+  anim?: NodeAnim;
 }
 
 export type MapNode = Node<MapNodeData>;
@@ -64,6 +70,7 @@ export const NODE_KINDS: NodeKindMeta[] = [
   { kind: "action", label: "Действие", color: "#0ea5e9", hint: "Действие пользователя/системы" },
   { kind: "decision", label: "Решение", color: "#f59e0b", hint: "Ветвление (да / нет)" },
   { kind: "process", label: "Процесс", color: "#8b5cf6", hint: "Шаг процесса" },
+  { kind: "number", label: "Номер", color: "#6366f1", hint: "Крупный номер для нумерации флоу" },
   { kind: "link", label: "Ссылка на доску/задачу", color: "#14b8a6", hint: "Связь с реальной работой" },
   { kind: "note", label: "Заметка", color: "#eab308", hint: "Комментарий на холсте" },
   { kind: "group", label: "Группа", color: "#64748b", hint: "Рамка-зона (этап)" },
@@ -82,6 +89,7 @@ export const NODE_SIZE: Record<MapNodeKind, { w: number; h: number }> = {
   process: { w: 212, h: 76 },
   link: { w: 230, h: 78 },
   note: { w: 200, h: 112 },
+  number: { w: 96, h: 96 },
   group: { w: 330, h: 220 },
 };
 

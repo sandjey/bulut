@@ -21,7 +21,9 @@ import {
   AlertTriangle,
   Copy,
   Trash2,
+  Hash,
 } from "lucide-react";
+import type { NodeAnim } from "@/lib/map-types";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { useNodeStats, useMapFilter } from "./MapContext";
@@ -39,7 +41,17 @@ const KIND_ICON: Record<MapNodeKind, typeof Flag> = {
   process: Cog,
   note: StickyNote,
   group: Cog,
+  number: Hash,
   link: ExternalLink,
+};
+
+/** CSS-класс анимации узла (Tailwind + кастомные из globals.css). */
+const ANIM_CLASS: Record<NodeAnim, string> = {
+  none: "",
+  pulse: "animate-pulse",
+  bounce: "animate-bounce",
+  float: "bulut-float",
+  glow: "bulut-glow",
 };
 
 function uid(): string {
@@ -76,6 +88,7 @@ function EditableText({
   placeholder,
   multiline,
   editable,
+  style,
 }: {
   value: string;
   onCommit: (v: string) => void;
@@ -83,6 +96,7 @@ function EditableText({
   placeholder?: string;
   multiline?: boolean;
   editable: boolean;
+  style?: React.CSSProperties;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -101,6 +115,7 @@ function EditableText({
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
       onBlur: commit,
       onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+      style,
       className: cn("nodrag nopan w-full rounded bg-black/20 px-1 outline-none ring-1 ring-brand", className),
     };
     return multiline ? (
@@ -129,6 +144,7 @@ function EditableText({
   return (
     <div
       className={cn(className, editable && "cursor-text")}
+      style={style}
       onDoubleClick={(e) => {
         if (!editable) return;
         e.stopPropagation();
@@ -287,6 +303,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   const color = data.color || NODE_KIND_META[kind]?.color || "#6366f1";
   const Icon = KIND_ICON[kind] ?? MousePointerClick;
   const isSelected = !!selected;
+  const animClass = ANIM_CLASS[(data.anim as NodeAnim) ?? "none"] ?? "";
 
   const patch = (p: Partial<MapNodeData>) =>
     rf.setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...p } } : n)));
@@ -328,7 +345,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       <>
         {isSelected && toolbar}
         <div
-          className={cn("bulut-node min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand", dim)}
+          className={cn("bulut-node min-h-[64px] w-full min-w-[140px] rotate-[-1deg] rounded-lg p-3 text-sm shadow-md", isSelected && "ring-2 ring-brand", dim, animClass)}
           style={{ background: withAlpha(color, 0.16), border: `1px solid ${withAlpha(color, 0.4)}` }}
         >
           <Handles color={color} />
@@ -352,7 +369,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       <>
         {isSelected && toolbar}
         <div
-          className={cn("bulut-node h-full min-h-[140px] w-full min-w-[200px] rounded-2xl border-2 border-dashed p-3", isSelected && "ring-2 ring-brand", dim)}
+          className={cn("bulut-node h-full min-h-[140px] w-full min-w-[200px] rounded-2xl border-2 border-dashed p-3", isSelected && "ring-2 ring-brand", dim, animClass)}
           style={{ borderColor: withAlpha(color, 0.6), background: withAlpha(color, 0.05) }}
         >
           <Handles color={color} />
@@ -369,12 +386,46 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     );
   }
 
+  // ── Номер (крупная цифра для нумерации флоу) ──
+  if (kind === "number") {
+    return (
+      <>
+        {isSelected && toolbar}
+        <div
+          className={cn(
+            "bulut-node relative flex h-full min-h-[56px] w-full min-w-[56px] items-center justify-center rounded-2xl border",
+            isSelected && "ring-2 ring-brand",
+            dim,
+            animClass,
+          )}
+          style={{
+            containerType: "size",
+            background: `linear-gradient(140deg, ${withAlpha(color, 0.22)}, ${withAlpha(color, 0.04)} 60%), rgb(var(--surface))`,
+            borderColor: withAlpha(color, 0.45),
+            boxShadow: `0 12px 30px -12px ${withAlpha(color, 0.6)}`,
+          }}
+        >
+          <Handles color={color} />
+          <EditableText
+            value={data.label}
+            editable={canEdit}
+            placeholder="1"
+            onCommit={(v) => patch({ label: v })}
+            className="flex w-full items-center justify-center text-center font-black leading-none tabular-nums"
+            style={{ fontSize: "60cqmin", color }}
+          />
+        </div>
+        {resizer}
+      </>
+    );
+  }
+
   // ── Ссылка ──
   if (kind === "link") {
     return (
       <>
         {isSelected && toolbar}
-        <LinkNode id={id} data={data} selected={isSelected} color={color} stats={stats} dim={dim} />
+        <LinkNode id={id} data={data} selected={isSelected} color={color} stats={stats} dim={dim} animClass={animClass} />
         {resizer}
       </>
     );
@@ -404,6 +455,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
           terminator ? "min-h-[52px] rounded-full" : "min-h-[70px] rounded-2xl",
           isSelected && "ring-2 ring-brand",
           dim,
+          animClass,
         )}
         style={cardStyle}
       >
@@ -460,6 +512,7 @@ function LinkNode({
   color,
   stats,
   dim,
+  animClass,
 }: {
   id: string;
   data: MapNodeData;
@@ -467,6 +520,7 @@ function LinkNode({
   color: string;
   stats: NodeStats;
   dim?: string;
+  animClass?: string;
 }) {
   const { boards, tasks } = useStore();
   const router = useRouter();
@@ -488,6 +542,7 @@ function LinkNode({
         "bulut-node relative flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center backdrop-blur-sm",
         selected && "ring-2 ring-brand",
         dim,
+        animClass,
       )}
       style={{
         background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,

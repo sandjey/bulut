@@ -523,3 +523,16 @@ body {
   50%      { box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
 }
 .bulut-pulse { animation: bulutPulse 1.4s ease-out infinite; }
+
+/* Bulut MAP — анимации узлов (парение / свечение) */
+@keyframes bulutFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.bulut-float { animation: bulutFloat 2.6s ease-in-out infinite; }
+
+@keyframes bulutGlow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(99, 102, 241, 0.4)); }
+  50%      { filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.85)); }
+}
+.bulut-glow { animation: bulutGlow 1.8s ease-in-out infinite; }

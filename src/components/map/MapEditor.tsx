@@ -57,6 +57,7 @@ import {
   type MapNode,
   type MapEdge,
   type MapNodeKind,
+  type NodeAnim,
   type ProjectMap,
 } from "@/lib/map-types";
 import { BOARD_COLORS, type TaskType } from "@/lib/types";
@@ -90,7 +91,9 @@ function withSize(n: MapNode): MapNode {
   const sw = typeof n.style?.width === "number" ? n.style.width : undefined;
   const w = (n.width as number | undefined) ?? sw ?? NODE_SIZE[k].w;
   const style: React.CSSProperties = { ...n.style, width: w };
-  if (k === "group") {
+  // группа и номер — с фиксированной высотой (контейнер / квадрат-цифра),
+  // остальные растут под текст (height не задаём)
+  if (k === "group" || k === "number") {
     const sh = typeof n.style?.height === "number" ? n.style.height : undefined;
     style.height = (n.height as number | undefined) ?? sh ?? NODE_SIZE[k].h;
   } else {
@@ -282,13 +285,16 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const makeNode = (kind: MapNodeKind, pos: { x: number; y: number }): MapNode => {
     const meta = NODE_KIND_META[kind];
     const sz = NODE_SIZE[kind];
+    // номер: подставляем следующий по порядку (1, 2, 3…)
+    const nextNumber = String(nodes.filter((n) => n.data?.kind === "number").length + 1);
+    const label = kind === "note" ? "" : kind === "number" ? nextNumber : meta.label;
     return {
       id: uid(),
       type: "bulut",
       position: pos,
-      data: { label: kind === "note" ? "" : meta.label, kind, color: meta.color },
-      // фиксируем только ширину; высота авто (группа — с высотой)
-      style: kind === "group" ? { width: sz.w, height: sz.h } : { width: sz.w },
+      data: { label, kind, color: meta.color },
+      // номер и группа — с фиксированной шириной и высотой (квадрат/рамка)
+      style: kind === "group" || kind === "number" ? { width: sz.w, height: sz.h } : { width: sz.w },
       ...(kind === "group" ? { zIndex: -1 } : {}),
     };
   };
@@ -740,6 +746,14 @@ function Palette({ onAdd }: { onAdd: (k: MapNodeKind) => void }) {
 
 /* ---------------- Инспектор узла ---------------- */
 
+const ANIM_OPTIONS: { key: NodeAnim; label: string }[] = [
+  { key: "none", label: "Нет" },
+  { key: "pulse", label: "Пульс" },
+  { key: "bounce", label: "Прыжок" },
+  { key: "float", label: "Парение" },
+  { key: "glow", label: "Свет" },
+];
+
 function NodeInspector({
   node,
   onChange,
@@ -790,6 +804,23 @@ function NodeInspector({
       <div className="flex flex-wrap gap-1.5">
         {BOARD_COLORS.map((c) => (
           <button key={c} onClick={() => onChange({ color: c })} className="h-5 w-5 rounded-full transition hover:scale-110" style={{ backgroundColor: c, outline: data.color === c ? `2px solid ${c}` : "none", outlineOffset: 2 }} />
+        ))}
+      </div>
+
+      <label className="label mt-3">Анимация</label>
+      <div className="grid grid-cols-5 gap-1">
+        {ANIM_OPTIONS.map((a) => (
+          <button
+            key={a.key}
+            onClick={() => onChange({ anim: a.key })}
+            title={a.label}
+            className={cn(
+              "rounded-lg border px-1 py-1.5 text-[10px] leading-tight transition",
+              (data.anim ?? "none") === a.key ? "border-brand bg-brand/10 text-fg" : "border-border text-muted hover:bg-surface-2",
+            )}
+          >
+            {a.label}
+          </button>
         ))}
       </div>
 
