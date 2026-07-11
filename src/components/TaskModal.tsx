@@ -23,8 +23,34 @@ import {
   TASK_TYPE_KEYS,
 } from "@/lib/types";
 import { uniqueTags } from "@/lib/filters";
-import { withAlpha } from "@/lib/utils";
+import { withAlpha, cn } from "@/lib/utils";
 import { fmtDateTime } from "@/lib/date";
+import type { MapNode, MapEdge } from "@/lib/map-types";
+
+/** Этапы под экраном — узлы вниз по стрелкам до следующего экрана. */
+function stagesUnder(screenId: string, nodes: MapNode[], edges: MapEdge[]): MapNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const adj = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!adj.has(e.source)) adj.set(e.source, []);
+    adj.get(e.source)!.push(e.target);
+  }
+  const stages: MapNode[] = [];
+  const seen = new Set<string>([screenId]);
+  const queue = [...(adj.get(screenId) ?? [])];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = byId.get(id);
+    if (!n) continue;
+    const kind = n.data?.kind;
+    if (kind === "screen" || kind === "terminator" || kind === "note" || kind === "group") continue;
+    stages.push(n);
+    for (const t of adj.get(id) ?? []) queue.push(t);
+  }
+  return stages;
+}
 
 interface TaskModalProps {
   open: boolean;
@@ -57,25 +83,57 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   const [tags, setTags] = useState<string[]>([]);
   const [columnId, setColumnId] = useState("");
   const [mapId, setMapId] = useState<string>("");
-  const [mapNodeId, setMapNodeId] = useState<string>("");
+  const [screenId, setScreenId] = useState<string>(""); // выбранный экран (kind=screen)
+  const [mapNodeId, setMapNodeId] = useState<string>(""); // выбранный этап (узел под экраном)
 
   const allTags = useMemo(() => uniqueTags(tasks), [tasks]);
 
   const { maps } = useMaps();
   const selectedMap = useMemo(() => maps.find((m) => m.id === mapId) ?? null, [maps, mapId]);
-  // Узлы-«экраны» карты (без заметок и групп) для выбора привязки.
+  const allNodes = useMemo(() => selectedMap?.graph.nodes ?? [], [selectedMap]);
+  const allEdges = useMemo(() => selectedMap?.graph.edges ?? [], [selectedMap]);
+  // Все узлы-цели (без заметок/групп).
   const mapNodes = useMemo(
-    () =>
-      (selectedMap?.graph.nodes ?? []).filter(
-        (n) => n.data?.kind !== "note" && n.data?.kind !== "group",
-      ),
-    [selectedMap],
+    () => allNodes.filter((n) => n.data?.kind !== "note" && n.data?.kind !== "group"),
+    [allNodes],
   );
+  // Экраны (kind=screen). Если они есть — включаем трёхуровневый выбор Экран→Этап.
+  const screenNodes = useMemo(() => mapNodes.filter((n) => n.data?.kind === "screen"), [mapNodes]);
+  const useScreenStage = screenNodes.length > 0;
+
+  // Этапы под выбранным экраном — узлы вниз по стрелкам (до следующего экрана).
+  const stageOptions = useMemo(() => {
+    if (!useScreenStage || !screenId) return [];
+    const screen = allNodes.find((n) => n.id === screenId);
+    const down = stagesUnder(screenId, allNodes, allEdges);
+    return screen ? [screen, ...down] : down;
+  }, [useScreenStage, screenId, allNodes, allEdges]);
+
+  // Эффективный привязанный узел = этап, иначе сам экран (в плоском режиме — просто выбранный узел).
+  const effectiveNodeId = useScreenStage ? mapNodeId || screenId : mapNodeId;
   const linkedNode = useMemo(
-    () => mapNodes.find((n) => n.id === mapNodeId) ?? null,
-    [mapNodes, mapNodeId],
+    () => mapNodes.find((n) => n.id === effectiveNodeId) ?? null,
+    [mapNodes, effectiveNodeId],
   );
-  const nodeMissing = !!mapId && !!mapNodeId && !linkedNode;
+  const nodeMissing = !!mapId && !!effectiveNodeId && !linkedNode;
+
+  // При редактировании — вычислить экран по сохранённому узлу (map_node_id).
+  useEffect(() => {
+    if (!open || !useScreenStage || !mapNodeId || screenId) return;
+    // сам узел — экран?
+    if (screenNodes.some((s) => s.id === mapNodeId)) {
+      setScreenId(mapNodeId);
+      setMapNodeId("");
+      return;
+    }
+    // найти экран, под которым лежит этот этап
+    for (const s of screenNodes) {
+      if (stagesUnder(s.id, allNodes, allEdges).some((n) => n.id === mapNodeId)) {
+        setScreenId(s.id);
+        return;
+      }
+    }
+  }, [open, useScreenStage, mapNodeId, screenId, screenNodes, allNodes, allEdges]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,6 +148,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setTags(task.tags);
       setColumnId(task.columnId);
       setMapId(task.mapId ?? "");
+      setScreenId("");
       setMapNodeId(task.mapNodeId ?? "");
     } else {
       setTitle("");
@@ -102,6 +161,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setTags([]);
       setColumnId(defaultColumnId ?? board.columns[0]?.id ?? "");
       setMapId("");
+      setScreenId("");
       setMapNodeId("");
     }
   }, [open, task, defaultColumnId, board.columns]);
@@ -120,7 +180,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         tags,
         columnId,
         mapId: mapId || null,
-        mapNodeId: mapId ? mapNodeId || null : null,
+        mapNodeId: mapId ? effectiveNodeId || null : null,
       });
     } else {
       createTask({
@@ -135,7 +195,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         doneDueDate: doneDueDate || null,
         tags,
         mapId: mapId || null,
-        mapNodeId: mapId ? mapNodeId || null : null,
+        mapNodeId: mapId ? effectiveNodeId || null : null,
       });
     }
     onClose();
@@ -319,38 +379,77 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-400">
               <Waypoints className="h-3.5 w-3.5" /> Экран на карте (необязательно)
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className={cn("grid grid-cols-1 gap-2", useScreenStage ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
               <select
                 className="input"
                 value={mapId}
                 onChange={(e) => {
                   setMapId(e.target.value);
+                  setScreenId("");
                   setMapNodeId("");
                 }}
               >
-                <option value="">— карта не выбрана —</option>
+                <option value="">— карта —</option>
                 {maps.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
                 ))}
               </select>
-              <select
-                className="input"
-                value={mapNodeId}
-                onChange={(e) => setMapNodeId(e.target.value)}
-                disabled={!mapId}
-              >
-                <option value="">— экран —</option>
-                {nodeMissing && <option value={mapNodeId}>⚠ экран удалён</option>}
-                {mapNodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {(n.data?.label as string) || "Без названия"}
-                  </option>
-                ))}
-              </select>
+
+              {useScreenStage ? (
+                <>
+                  <select
+                    className="input"
+                    value={screenId}
+                    onChange={(e) => {
+                      setScreenId(e.target.value);
+                      setMapNodeId("");
+                    }}
+                    disabled={!mapId}
+                  >
+                    <option value="">— экран —</option>
+                    {screenNodes.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {(n.data?.label as string) || "Экран"}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="input"
+                    value={mapNodeId}
+                    onChange={(e) => setMapNodeId(e.target.value)}
+                    disabled={!screenId}
+                    title="Этап — узел под выбранным экраном"
+                  >
+                    <option value="">— весь экран —</option>
+                    {stageOptions
+                      .filter((n) => n.id !== screenId)
+                      .map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {(n.data?.label as string) || "Этап"}
+                        </option>
+                      ))}
+                  </select>
+                </>
+              ) : (
+                <select
+                  className="input"
+                  value={mapNodeId}
+                  onChange={(e) => setMapNodeId(e.target.value)}
+                  disabled={!mapId}
+                >
+                  <option value="">— узел —</option>
+                  {nodeMissing && <option value={mapNodeId}>⚠ узел удалён</option>}
+                  {mapNodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {(n.data?.label as string) || "Без названия"}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            {mapId && mapNodeId && (
+            {mapId && effectiveNodeId && (
               nodeMissing ? (
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> Экран удалён из карты.
@@ -359,6 +458,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
                     className="ml-auto underline"
                     onClick={() => {
                       setMapId("");
+                      setScreenId("");
                       setMapNodeId("");
                     }}
                   >
@@ -367,7 +467,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
                 </div>
               ) : (
                 <Link
-                  href={`/maps/${mapId}?focus=${mapNodeId}`}
+                  href={`/maps/${mapId}?focus=${effectiveNodeId}`}
                   onClick={onClose}
                   className="mt-2 inline-flex items-center gap-1.5 text-xs text-teal-600 hover:underline dark:text-teal-400"
                 >

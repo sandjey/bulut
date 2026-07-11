@@ -178,46 +178,53 @@ function Toolbar({
   );
 }
 
-/** Бейдж статуса-светофора + счётчик задач в углу узла. */
+/** Крупный угловой светофор-кружок (видно издалека). */
 function StatusBadge({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
   if (stats.total === 0 && !override) return null;
   const meta = STATUS_META[stats.status];
-  const title =
-    `${meta.label}` +
-    (stats.total ? ` · задач: ${stats.total}` : "") +
-    (stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : "") +
-    (override ? " · вручную" : "");
   return (
     <div
-      className="nodrag absolute -right-2 -top-2 z-30 flex items-center gap-1 rounded-full border border-black/30 bg-surface px-1.5 py-0.5 text-[10px] font-bold shadow-md"
-      title={title}
+      className="nodrag absolute -right-2.5 -top-2.5 z-30 grid h-6 min-w-6 place-items-center rounded-full border-2 border-black/40 px-1 text-[11px] font-extrabold text-white shadow-lg"
+      style={{ backgroundColor: meta.color }}
+      title={`${meta.label}${stats.total ? ` · задач: ${stats.total}` : ""}${stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : ""}${override ? " · вручную" : ""}`}
     >
-      <span
-        className={cn("h-2.5 w-2.5 rounded-full", stats.status === "bug" && "bulut-pulse")}
-        style={{ backgroundColor: meta.color, boxShadow: `0 0 6px ${meta.color}` }}
-      />
-      {stats.total > 0 && <span className="text-fg">{stats.total}</span>}
+      <span className={cn("absolute -inset-0.5 rounded-full", stats.status === "bug" && "bulut-pulse")} />
+      {stats.total > 0 ? stats.total : "●"}
     </div>
   );
 }
 
-/** Мини-разбивка по этапам (полоски). */
-function StageBar({ stats }: { stats: NodeStats }) {
-  if (stats.total === 0) return null;
+/** Отдельная статус-часть внутри карточки: цвет, подпись, счётчики, прогресс по этапам. */
+function StatusBar({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
+  if (stats.total === 0 && !override) return null;
+  const m = STATUS_META[stats.status];
   return (
-    <div className="mt-1 flex w-full items-center gap-1.5">
-      <div className="flex h-1.5 flex-1 overflow-hidden rounded-full bg-black/25">
-        {stats.byStage.map((s) => (
-          <div
-            key={s.name}
-            title={`${s.name}: ${s.count}`}
-            style={{ width: `${(s.count / stats.total) * 100}%`, backgroundColor: "rgb(var(--brand))" }}
-          />
-        ))}
+    <div
+      className="nodrag mt-1.5 w-full rounded-lg px-2 py-1.5"
+      style={{ background: withAlpha(m.color, 0.16), border: `1px solid ${withAlpha(m.color, 0.45)}` }}
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: m.color }}>
+        <span className={cn("h-2.5 w-2.5 rounded-full", stats.status === "bug" && "bulut-pulse")} style={{ backgroundColor: m.color }} />
+        <span>{m.label}</span>
+        {override && <span className="rounded bg-black/20 px-1 text-[8px] uppercase">вручную</span>}
+        <span className="ml-auto font-semibold text-fg/80">
+          {stats.total} задач{stats.bugsOpen ? ` · 🐞 ${stats.bugsOpen}` : ""}
+        </span>
       </div>
-      <span className="text-[9px] text-muted">
-        {stats.done}/{stats.total}
-      </span>
+      {stats.total > 0 && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-black/25">
+            {stats.byStage.map((s) => (
+              <div
+                key={s.name}
+                title={`${s.name}: ${s.count}`}
+                style={{ width: `${(s.count / stats.total) * 100}%`, backgroundColor: withAlpha(m.color, 0.85) }}
+              />
+            ))}
+          </div>
+          <span className="text-[9px] font-semibold text-muted">{stats.done}/{stats.total}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -406,7 +413,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             <GitBranch className="h-2.5 w-2.5" /> да / нет
           </div>
         )}
-        <StageBar stats={stats} />
+        <StatusBar stats={stats} override={data.statusOverride} />
       </div>
       {resizer}
     </>
@@ -468,6 +475,7 @@ function LinkNode({
         <div className="break-words text-sm font-semibold text-fg">{title}</div>
         <div className="break-words text-xs text-muted">{missing ? "источник удалён" : subtitle}</div>
       </div>
+      <StatusBar stats={stats} override={data.statusOverride} />
     </div>
   );
 }
