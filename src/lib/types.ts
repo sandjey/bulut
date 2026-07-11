@@ -40,6 +40,7 @@ export interface Board {
   color: string; // hex color for the colored label
   columns: Column[];
   createdAt: string; // ISO
+  deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 
 export interface Task {
@@ -70,6 +71,7 @@ export interface Task {
   order: number; // ordering within a column
   mapId: string | null; // Bulut MAP: к какой карте привязана задача
   mapNodeId: string | null; // Bulut MAP: id узла-экрана в графе карты
+  deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 
 /** Одно событие возврата карточки на доработку. */
@@ -134,6 +136,7 @@ export interface JournalEntry {
   stage: string; // действие/этап: "Готово", "На проверке", "Возврат" и т.п.
   type: TaskType; // тип задачи (баг/фича/…)
   createdAt: string; // ISO
+  deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 
 export interface AppData {
@@ -142,6 +145,24 @@ export interface AppData {
   journal: JournalEntry[];
   comments: TaskComment[];
   members: Member[];
+}
+
+/** Удалённые (в Корзине) элементы — хранятся отдельно от рабочих данных. */
+export interface TrashData {
+  boards: Board[];
+  tasks: Task[];
+  journal: JournalEntry[];
+}
+
+/** Метаданные бэкапа (без тяжёлого поля data). */
+export interface BackupMeta {
+  id: string;
+  createdAt: string;
+  createdBy: string | null;
+  authorName: string;
+  label: string;
+  kind: "manual" | "auto";
+  counts: Record<string, number>;
 }
 
 export const MEMBER_ROLES = ["Frontend", "Backend", "QA", "Mobile", "DevOps", "Дизайн", "PM"];

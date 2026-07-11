@@ -131,7 +131,12 @@ export default function MapsPage() {
                           <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg animate-scale-in">
                             <button
                               onClick={() => {
-                                if (confirm(`Удалить карту «${m.name}»?`)) deleteMap(m.id);
+                                if (
+                                  confirm(
+                                    `Удалить карту «${m.name}»? Попадёт в Корзину — можно восстановить.`,
+                                  )
+                                )
+                                  deleteMap(m.id);
                                 setMenuFor(null);
                               }}
                               className={cn(

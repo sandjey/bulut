@@ -34,6 +34,11 @@ interface MapsContextValue {
   deleteMap: (id: string) => void;
   /** Мгновенно обновляет граф локально и сохраняет в БД с задержкой (autosave). */
   saveGraph: (id: string, graph: MapGraph) => void;
+  // корзина
+  trashedMaps: ProjectMap[];
+  refreshTrashedMaps: () => void;
+  restoreMap: (id: string) => void;
+  purgeMap: (id: string) => void;
 }
 
 const MapsContext = createContext<MapsContextValue | null>(null);
@@ -48,6 +53,16 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   const dirty = useRef<Set<string>>(new Set());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  const [trashedMaps, setTrashedMaps] = useState<ProjectMap[]>([]);
+  const trashRef = useRef<ProjectMap[]>([]);
+  const applyTrash = useCallback((next: ProjectMap[]) => {
+    trashRef.current = next;
+    setTrashedMaps(next);
+  }, []);
+  const refreshTrashedMaps = useCallback(() => {
+    db.fetchTrashMaps().then(applyTrash).catch(() => {});
+  }, [applyTrash]);
+
   const apply = useCallback((next: ProjectMap[]) => {
     mapsRef.current = next;
     setMaps(next);
@@ -58,6 +73,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     if (!userId) {
       apply([]);
+      applyTrash([]);
       setReady(false);
       return;
     }
@@ -67,6 +83,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           apply(list);
           setReady(true);
+          refreshTrashedMaps();
         }
       })
       .catch((e) => {
@@ -76,7 +93,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, apply]);
+  }, [userId, apply, applyTrash, refreshTrashedMaps]);
 
   // Realtime: обновляем список, но не затираем карту с несохранёнными правками
   useEffect(() => {
@@ -93,6 +110,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
               dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
             );
             apply(merged);
+            refreshTrashedMaps();
           })
           .catch(console.error);
       })
@@ -100,7 +118,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     return () => {
       sb.removeChannel(channel);
     };
-  }, [userId, apply]);
+  }, [userId, apply, refreshTrashedMaps]);
 
   const persist = useCallback((p: Promise<unknown>) => {
     p.catch((e) => console.error("Ошибка синхронизации карты", e));
@@ -151,12 +169,34 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     [apply, persist],
   );
 
+  // Удаление карты = перенос в Корзину. Обратимо.
   const deleteMap = useCallback(
     (id: string) => {
+      const map = mapsRef.current.find((m) => m.id === id);
       apply(mapsRef.current.filter((m) => m.id !== id));
+      if (map) applyTrash([{ ...map, deletedAt: new Date().toISOString() }, ...trashRef.current]);
+      persist(db.softDeleteProjectMapRow(id));
+    },
+    [apply, applyTrash, persist],
+  );
+
+  const restoreMap = useCallback(
+    (id: string) => {
+      const map = trashRef.current.find((m) => m.id === id);
+      if (!map) return;
+      applyTrash(trashRef.current.filter((m) => m.id !== id));
+      apply([...mapsRef.current, { ...map, deletedAt: null }]);
+      persist(db.restoreProjectMapRow(id));
+    },
+    [apply, applyTrash, persist],
+  );
+
+  const purgeMap = useCallback(
+    (id: string) => {
+      applyTrash(trashRef.current.filter((m) => m.id !== id));
       persist(db.deleteProjectMapRow(id));
     },
-    [apply, persist],
+    [applyTrash, persist],
   );
 
   const saveGraph = useCallback(
@@ -181,8 +221,34 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<MapsContextValue>(
-    () => ({ maps, ready, getMap, createMap, renameMap, setMapColor, deleteMap, saveGraph }),
-    [maps, ready, getMap, createMap, renameMap, setMapColor, deleteMap, saveGraph],
+    () => ({
+      maps,
+      ready,
+      getMap,
+      createMap,
+      renameMap,
+      setMapColor,
+      deleteMap,
+      saveGraph,
+      trashedMaps,
+      refreshTrashedMaps,
+      restoreMap,
+      purgeMap,
+    }),
+    [
+      maps,
+      ready,
+      getMap,
+      createMap,
+      renameMap,
+      setMapColor,
+      deleteMap,
+      saveGraph,
+      trashedMaps,
+      refreshTrashedMaps,
+      restoreMap,
+      purgeMap,
+    ],
   );
 
   return <MapsContext.Provider value={value}>{children}</MapsContext.Provider>;

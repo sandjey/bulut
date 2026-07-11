@@ -134,7 +134,11 @@ export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
               </button>
               <button
                 onClick={() => {
-                  if (confirm(`Удалить доску «${board.name}» со всеми задачами?`))
+                  if (
+                    confirm(
+                      `Удалить доску «${board.name}»? Она и её задачи попадут в Корзину — можно восстановить.`,
+                    )
+                  )
                     deleteBoard(board.id);
                   setMenuOpen(false);
                 }}

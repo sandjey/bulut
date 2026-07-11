@@ -202,7 +202,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   };
 
   const handleDelete = () => {
-    if (task && confirm("Удалить задачу?")) {
+    if (task && confirm("Удалить задачу? Она попадёт в Корзину — можно восстановить.")) {
       deleteTask(task.id);
       onClose();
     }

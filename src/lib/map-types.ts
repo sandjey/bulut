@@ -45,6 +45,7 @@ export interface ProjectMap {
   graph: MapGraph;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 
 export const EMPTY_GRAPH: MapGraph = { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };

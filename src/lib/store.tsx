@@ -21,6 +21,8 @@ import {
   Priority,
   TaskType,
   ReturnEvent,
+  TrashData,
+  BackupMeta,
   BOARD_COLORS,
   DEFAULT_COLUMN_NAMES,
   READY_COLUMN_NAME,
@@ -200,6 +202,23 @@ interface StoreContextValue extends AppData {
   addJournalEntry: (entry: Omit<JournalEntry, "id" | "createdAt">) => void;
   updateJournalEntry: (id: string, patch: Partial<JournalEntry>) => void;
   deleteJournalEntry: (id: string) => void;
+  // корзина (soft-delete)
+  trash: TrashData;
+  refreshTrash: () => void;
+  restoreBoard: (id: string) => void;
+  restoreTask: (id: string) => void;
+  restoreJournal: (id: string) => void;
+  purgeBoard: (id: string) => void;
+  purgeTask: (id: string) => void;
+  purgeJournal: (id: string) => void;
+  emptyTrash: () => Promise<void>;
+  // бэкапы
+  backups: BackupMeta[];
+  refreshBackups: () => Promise<void>;
+  createBackup: (label: string) => Promise<BackupMeta | null>;
+  deleteBackup: (id: string) => Promise<void>;
+  downloadBackup: (id: string) => Promise<void>;
+  restoreBackup: (id: string) => Promise<void>;
   // data
   refetch: () => Promise<void>;
 }
@@ -217,20 +236,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const dataRef = useRef<AppData>(EMPTY);
 
+  const EMPTY_TRASH: TrashData = useMemo(() => ({ boards: [], tasks: [], journal: [] }), []);
+  const [trash, setTrash] = useState<TrashData>({ boards: [], tasks: [], journal: [] });
+  const trashRef = useRef<TrashData>({ boards: [], tasks: [], journal: [] });
+  const applyTrash = useCallback((next: TrashData) => {
+    trashRef.current = next;
+    setTrash(next);
+  }, []);
+  const [backups, setBackups] = useState<BackupMeta[]>([]);
+
   const apply = useCallback((next: AppData) => {
     dataRef.current = next;
     setData(next);
   }, []);
+
+  const refreshTrash = useCallback(() => {
+    db.fetchTrash().then(applyTrash).catch(() => {});
+  }, [applyTrash]);
 
   const refetch = useCallback(async () => {
     if (!userId) return;
     try {
       const fresh = await db.fetchAll(userId);
       apply(fresh);
+      refreshTrash();
     } catch (e) {
       console.error("Не удалось загрузить данные", e);
     }
-  }, [userId, apply]);
+  }, [userId, apply, refreshTrash]);
 
   // (Re)load whenever the signed-in user changes.
   // Cache-first: hydrate instantly from localStorage (offline-safe, no empty
@@ -239,6 +272,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     if (!userId) {
       apply(EMPTY);
+      applyTrash(EMPTY_TRASH);
+      setBackups([]);
       setReady(false);
       return;
     }
@@ -256,6 +291,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           apply(fresh);
           setReady(true);
+          refreshTrash();
         }
       })
       .catch((e) => {
@@ -266,7 +302,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, apply]);
+  }, [userId, apply, applyTrash, refreshTrash, EMPTY_TRASH]);
 
   // Write-through: persist every state change to the offline cache
   useEffect(() => {
@@ -285,6 +321,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         db.fetchAll(userId).then(apply).catch(console.error);
+        refreshTrash();
       }, 300);
     };
 
@@ -300,7 +337,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (timer) clearTimeout(timer);
       sb.removeChannel(channel);
     };
-  }, [userId, apply]);
+  }, [userId, apply, refreshTrash]);
 
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(
@@ -400,16 +437,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [apply, persist]
   );
 
+  // Удаление доски = перенос в Корзину (доска + её задачи). Обратимо.
   const deleteBoard = useCallback(
     (id: string) => {
+      const d = dataRef.current;
+      const board = d.boards.find((b) => b.id === id);
+      if (!board) return;
+      const boardTasks = d.tasks.filter((t) => t.boardId === id);
+      const at = new Date().toISOString();
       apply({
-        ...dataRef.current,
-        boards: dataRef.current.boards.filter((b) => b.id !== id),
-        tasks: dataRef.current.tasks.filter((t) => t.boardId !== id),
+        ...d,
+        boards: d.boards.filter((b) => b.id !== id),
+        tasks: d.tasks.filter((t) => t.boardId !== id),
       });
-      persist(db.deleteBoardRow(id)); // tasks cascade-delete in DB
+      applyTrash({
+        boards: [{ ...board, deletedAt: at }, ...trashRef.current.boards],
+        tasks: [...boardTasks.map((t) => ({ ...t, deletedAt: at })), ...trashRef.current.tasks],
+        journal: trashRef.current.journal,
+      });
+      persist(db.softDeleteBoardRow(id));
     },
-    [apply, persist]
+    [apply, applyTrash, persist]
   );
 
   const addColumn = useCallback(
@@ -517,16 +565,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [apply, persist]
   );
 
+  // Удаление задачи = перенос в Корзину. Журнал НЕ трогаем (история сохраняется).
   const deleteTask = useCallback(
     (id: string) => {
-      apply({
-        ...dataRef.current,
-        tasks: dataRef.current.tasks.filter((t) => t.id !== id),
-        journal: dataRef.current.journal.filter((j) => j.taskId !== id),
+      const d = dataRef.current;
+      const task = d.tasks.find((t) => t.id === id);
+      if (!task) return;
+      const at = new Date().toISOString();
+      apply({ ...d, tasks: d.tasks.filter((t) => t.id !== id) });
+      applyTrash({
+        ...trashRef.current,
+        tasks: [{ ...task, deletedAt: at }, ...trashRef.current.tasks],
       });
-      persist(db.deleteTaskRow(id)); // journal cascade-deletes in DB
+      persist(db.softDeleteTaskRow(id));
     },
-    [apply, persist]
+    [apply, applyTrash, persist]
   );
 
   const moveTask = useCallback(
@@ -968,15 +1021,187 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [apply, persist]
   );
 
+  // Удаление записи журнала = перенос в Корзину. Обратимо.
   const deleteJournalEntry = useCallback(
     (id: string) => {
+      const d = dataRef.current;
+      const entry = d.journal.find((j) => j.id === id);
+      if (!entry) return;
+      const at = new Date().toISOString();
+      apply({ ...d, journal: d.journal.filter((j) => j.id !== id) });
+      applyTrash({
+        ...trashRef.current,
+        journal: [{ ...entry, deletedAt: at }, ...trashRef.current.journal],
+      });
+      persist(db.softDeleteJournalRow(id));
+    },
+    [apply, applyTrash, persist]
+  );
+
+  // ---------------- Корзина: восстановление / полное удаление ----------------
+  const restoreBoard = useCallback(
+    (id: string) => {
+      const t = trashRef.current;
+      const board = t.boards.find((b) => b.id === id);
+      if (!board) return;
+      const boardTasks = t.tasks.filter((x) => x.boardId === id);
+      applyTrash({
+        boards: t.boards.filter((b) => b.id !== id),
+        tasks: t.tasks.filter((x) => x.boardId !== id),
+        journal: t.journal,
+      });
       apply({
         ...dataRef.current,
-        journal: dataRef.current.journal.filter((j) => j.id !== id),
+        boards: [...dataRef.current.boards, { ...board, deletedAt: null }],
+        tasks: [...dataRef.current.tasks, ...boardTasks.map((x) => ({ ...x, deletedAt: null }))],
+      });
+      persist(db.restoreBoardRow(id));
+    },
+    [apply, applyTrash, persist]
+  );
+
+  const restoreTask = useCallback(
+    (id: string) => {
+      const t = trashRef.current;
+      const task = t.tasks.find((x) => x.id === id);
+      if (!task) return;
+      // если доска задачи тоже в Корзине — восстанавливаем доску целиком
+      const boardVisible = dataRef.current.boards.some((b) => b.id === task.boardId);
+      if (!boardVisible && t.boards.some((b) => b.id === task.boardId)) {
+        restoreBoard(task.boardId);
+        return;
+      }
+      applyTrash({ ...t, tasks: t.tasks.filter((x) => x.id !== id) });
+      apply({
+        ...dataRef.current,
+        tasks: [...dataRef.current.tasks, { ...task, deletedAt: null }],
+      });
+      persist(db.restoreTaskRow(id));
+    },
+    [apply, applyTrash, persist, restoreBoard]
+  );
+
+  const restoreJournal = useCallback(
+    (id: string) => {
+      const t = trashRef.current;
+      const entry = t.journal.find((x) => x.id === id);
+      if (!entry) return;
+      applyTrash({ ...t, journal: t.journal.filter((x) => x.id !== id) });
+      apply({
+        ...dataRef.current,
+        journal: [{ ...entry, deletedAt: null }, ...dataRef.current.journal],
+      });
+      persist(db.restoreJournalRow(id));
+    },
+    [apply, applyTrash, persist]
+  );
+
+  const purgeBoard = useCallback(
+    (id: string) => {
+      const t = trashRef.current;
+      applyTrash({
+        boards: t.boards.filter((b) => b.id !== id),
+        tasks: t.tasks.filter((x) => x.boardId !== id),
+        journal: t.journal,
+      });
+      persist(db.deleteBoardRow(id)); // задачи каскадом
+    },
+    [applyTrash, persist]
+  );
+
+  const purgeTask = useCallback(
+    (id: string) => {
+      applyTrash({
+        ...trashRef.current,
+        tasks: trashRef.current.tasks.filter((x) => x.id !== id),
+      });
+      persist(db.deleteTaskRow(id));
+    },
+    [applyTrash, persist]
+  );
+
+  const purgeJournal = useCallback(
+    (id: string) => {
+      applyTrash({
+        ...trashRef.current,
+        journal: trashRef.current.journal.filter((x) => x.id !== id),
       });
       persist(db.deleteJournalRow(id));
     },
-    [apply, persist]
+    [applyTrash, persist]
+  );
+
+  const emptyTrash = useCallback(async () => {
+    // страховка: перед полной очисткой делаем авто-бэкап
+    try {
+      await db.createBackupRow("Перед очисткой Корзины", "auto", getMe() || userEmail || "", userId);
+    } catch (e) {
+      console.error("Не удалось создать авто-бэкап", e);
+    }
+    const t = trashRef.current;
+    applyTrash(EMPTY_TRASH);
+    t.boards.forEach((b) => persist(db.deleteBoardRow(b.id)));
+    t.tasks.forEach((x) => persist(db.deleteTaskRow(x.id)));
+    t.journal.forEach((j) => persist(db.deleteJournalRow(j.id)));
+  }, [applyTrash, persist, userId, userEmail, EMPTY_TRASH]);
+
+  // ---------------- Бэкапы ----------------
+  const refreshBackups = useCallback(async () => {
+    try {
+      setBackups(await db.fetchBackups());
+    } catch (e) {
+      console.error("Не удалось загрузить бэкапы", e);
+    }
+  }, []);
+
+  const createBackup = useCallback(
+    async (label: string): Promise<BackupMeta | null> => {
+      try {
+        const meta = await db.createBackupRow(
+          label.trim() || "Ручной бэкап",
+          "manual",
+          getMe() || userEmail || "",
+          userId
+        );
+        setBackups((prev) => [meta, ...prev]);
+        return meta;
+      } catch (e) {
+        console.error("Не удалось создать бэкап", e);
+        return null;
+      }
+    },
+    [userId, userEmail]
+  );
+
+  const deleteBackup = useCallback(async (id: string) => {
+    try {
+      await db.deleteBackupRow(id);
+      setBackups((prev) => prev.filter((b) => b.id !== id));
+    } catch (e) {
+      console.error("Не удалось удалить бэкап", e);
+    }
+  }, []);
+
+  const downloadBackup = useCallback(async (id: string) => {
+    const data = await db.fetchBackupData(id);
+    if (!data) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bulut-backup-${id.slice(0, 8)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const restoreBackup = useCallback(
+    async (id: string) => {
+      const data = await db.fetchBackupData(id);
+      if (!data) return;
+      await db.restoreFromBackup(data);
+      await refetch();
+    },
+    [refetch]
   );
 
   const value = useMemo<StoreContextValue>(
@@ -1005,6 +1230,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addJournalEntry,
       updateJournalEntry,
       deleteJournalEntry,
+      trash,
+      refreshTrash,
+      restoreBoard,
+      restoreTask,
+      restoreJournal,
+      purgeBoard,
+      purgeTask,
+      purgeJournal,
+      emptyTrash,
+      backups,
+      refreshBackups,
+      createBackup,
+      deleteBackup,
+      downloadBackup,
+      restoreBackup,
       refetch,
     }),
     [
@@ -1032,6 +1272,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addJournalEntry,
       updateJournalEntry,
       deleteJournalEntry,
+      trash,
+      refreshTrash,
+      restoreBoard,
+      restoreTask,
+      restoreJournal,
+      purgeBoard,
+      purgeTask,
+      purgeJournal,
+      emptyTrash,
+      backups,
+      refreshBackups,
+      createBackup,
+      deleteBackup,
+      downloadBackup,
+      restoreBackup,
       refetch,
     ]
   );

@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Crown,
   Waypoints,
+  Trash2,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -116,6 +117,7 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
         {can("team.view") && navItem("/team", "Команда", Users, "#f43f5e")}
         {can("analytics.view") && navItem("/analytics", "Аналитика", BarChart3, "#f59e0b")}
         {can("map.view") && navItem("/maps", "Bulut MAP", Waypoints, "#14b8a6")}
+        {isAdmin && navItem("/trash", "Корзина и бэкапы", Trash2, "#64748b")}
         {isAdmin && navItem("/admin", "Администрирование", ShieldCheck, "#f59e0b")}
       </nav>
 

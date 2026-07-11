@@ -13,6 +13,7 @@ import {
   TaskComment,
   CommentKind,
   Member,
+  BackupMeta,
 } from "./types";
 import type { AppRole, PermissionKey, Profile } from "./permissions";
 import type { ProjectMap, MapGraph } from "./map-types";
@@ -26,6 +27,7 @@ interface BoardRow {
   columns: Column[];
   position: number;
   created_at: string;
+  deleted_at: string | null;
 }
 
 interface TaskRow {
@@ -57,6 +59,7 @@ interface TaskRow {
   photos: import("./types").TaskPhoto[];
   map_id: string | null;
   map_node_id: string | null;
+  deleted_at: string | null;
 }
 
 interface CommentRow {
@@ -91,6 +94,7 @@ interface JournalRow {
   stage: string;
   type: TaskType;
   created_at: string;
+  deleted_at: string | null;
 }
 
 // ---------- Mappers ----------
@@ -100,6 +104,7 @@ const toBoard = (r: BoardRow): Board => ({
   color: r.color,
   columns: r.columns ?? [],
   createdAt: r.created_at,
+  deletedAt: r.deleted_at ?? null,
 });
 
 const toTask = (r: TaskRow): Task => ({
@@ -130,6 +135,7 @@ const toTask = (r: TaskRow): Task => ({
   order: r.position,
   mapId: r.map_id ?? null,
   mapNodeId: r.map_node_id ?? null,
+  deletedAt: r.deleted_at ?? null,
 });
 
 const toComment = (r: CommentRow): TaskComment => ({
@@ -161,6 +167,7 @@ const toJournal = (r: JournalRow): JournalEntry => ({
   stage: r.stage ?? "",
   type: (r.type ?? "task") as TaskType,
   createdAt: r.created_at,
+  deletedAt: r.deleted_at ?? null,
 });
 
 function client() {
@@ -186,12 +193,35 @@ export async function fetchAll(userId: string): Promise<AppData> {
   const comments = commentsRes.error ? [] : (commentsRes.data as CommentRow[]).map(toComment);
   const members = membersRes.error ? [] : (membersRes.data as MemberRow[]).map(toMember);
 
+  // Фильтруем удалённые в JS (а не в SQL) — чтобы код не падал, если миграция
+  // с deleted_at ещё не применена: тогда deletedAt = null и всё видно.
+  const notDeleted = <T extends { deletedAt?: string | null }>(x: T) => !x.deletedAt;
   return {
-    boards: (boardsRes.data as BoardRow[]).map(toBoard),
-    tasks: (tasksRes.data as TaskRow[]).map(toTask),
-    journal: (journalRes.data as JournalRow[]).map(toJournal),
+    boards: (boardsRes.data as BoardRow[]).map(toBoard).filter(notDeleted),
+    tasks: (tasksRes.data as TaskRow[]).map(toTask).filter(notDeleted),
+    journal: (journalRes.data as JournalRow[]).map(toJournal).filter(notDeleted),
     comments,
     members,
+  };
+}
+
+/** Загрузка Корзины: удалённые доски/задачи/записи журнала. */
+export async function fetchTrash(): Promise<import("./types").TrashData> {
+  const c = client();
+  const [boardsRes, tasksRes, journalRes] = await Promise.all([
+    c.from("boards").select("*").order("created_at", { ascending: false }),
+    c.from("tasks").select("*").order("created_at", { ascending: false }),
+    c.from("journal").select("*").order("date", { ascending: false }),
+  ]);
+  // если колонки deleted_at ещё нет — вернём пустую корзину, а не упадём
+  if (boardsRes.error || tasksRes.error || journalRes.error) {
+    return { boards: [], tasks: [], journal: [] };
+  }
+  const deleted = <T extends { deletedAt?: string | null }>(x: T) => !!x.deletedAt;
+  return {
+    boards: (boardsRes.data as BoardRow[]).map(toBoard).filter(deleted),
+    tasks: (tasksRes.data as TaskRow[]).map(toTask).filter(deleted),
+    journal: (journalRes.data as JournalRow[]).map(toJournal).filter(deleted),
   };
 }
 
@@ -247,9 +277,29 @@ export async function updateBoardRow(id: string, patch: Partial<Board>) {
   if (error) throw error;
 }
 
+/** Полное (безвозвратное) удаление доски — задачи каскадом удалит БД. */
 export async function deleteBoardRow(id: string) {
   const { error } = await client().from("boards").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** В Корзину: помечаем доску и её задачи удалёнными (обратимо). */
+export async function softDeleteBoardRow(id: string) {
+  const at = new Date().toISOString();
+  const c = client();
+  const b = await c.from("boards").update({ deleted_at: at }).eq("id", id);
+  if (b.error) throw b.error;
+  const t = await c.from("tasks").update({ deleted_at: at }).eq("board_id", id).is("deleted_at", null);
+  if (t.error) throw t.error;
+}
+
+/** Восстановление доски из Корзины вместе с её задачами. */
+export async function restoreBoardRow(id: string) {
+  const c = client();
+  const b = await c.from("boards").update({ deleted_at: null }).eq("id", id);
+  if (b.error) throw b.error;
+  const t = await c.from("tasks").update({ deleted_at: null }).eq("board_id", id);
+  if (t.error) throw t.error;
 }
 
 // ---------- Tasks ----------
@@ -289,8 +339,24 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (error) throw error;
 }
 
+/** Полное (безвозвратное) удаление задачи. */
 export async function deleteTaskRow(id: string) {
   const { error } = await client().from("tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** В Корзину: помечаем задачу удалённой (обратимо). */
+export async function softDeleteTaskRow(id: string) {
+  const { error } = await client()
+    .from("tasks")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Восстановление задачи из Корзины. */
+export async function restoreTaskRow(id: string) {
+  const { error } = await client().from("tasks").update({ deleted_at: null }).eq("id", id);
   if (error) throw error;
 }
 
@@ -385,8 +451,24 @@ export async function updateJournalRow(id: string, patch: Partial<JournalEntry>)
   if (error) throw error;
 }
 
+/** Полное (безвозвратное) удаление записи журнала. */
 export async function deleteJournalRow(id: string) {
   const { error } = await client().from("journal").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** В Корзину: помечаем запись журнала удалённой (обратимо). */
+export async function softDeleteJournalRow(id: string) {
+  const { error } = await client()
+    .from("journal")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Восстановление записи журнала из Корзины. */
+export async function restoreJournalRow(id: string) {
+  const { error } = await client().from("journal").update({ deleted_at: null }).eq("id", id);
   if (error) throw error;
 }
 
@@ -462,6 +544,7 @@ interface ProjectMapRow {
   position: number;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
 }
 
 const toMap = (r: ProjectMapRow): ProjectMap => ({
@@ -472,6 +555,7 @@ const toMap = (r: ProjectMapRow): ProjectMap => ({
   graph: r.graph ?? { nodes: [], edges: [] },
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  deletedAt: r.deleted_at ?? null,
 });
 
 export async function fetchProjectMaps(): Promise<ProjectMap[]> {
@@ -480,7 +564,18 @@ export async function fetchProjectMaps(): Promise<ProjectMap[]> {
     .select("*")
     .order("position", { ascending: true });
   if (error) throw error;
-  return (data as ProjectMapRow[]).map(toMap);
+  // фильтр удалённых в JS — migration-safe (нет колонки → всё видно)
+  return (data as ProjectMapRow[]).map(toMap).filter((m) => !m.deletedAt);
+}
+
+/** Удалённые карты (Корзина). */
+export async function fetchTrashMaps(): Promise<ProjectMap[]> {
+  const { data, error } = await client()
+    .from("project_maps")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as ProjectMapRow[]).map(toMap).filter((m) => !!m.deletedAt);
 }
 
 export async function insertProjectMap(
@@ -512,7 +607,117 @@ export async function updateProjectMapRow(
   if (error) throw error;
 }
 
+/** Полное (безвозвратное) удаление карты. */
 export async function deleteProjectMapRow(id: string) {
   const { error } = await client().from("project_maps").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** В Корзину: помечаем карту удалённой (обратимо). */
+export async function softDeleteProjectMapRow(id: string) {
+  const { error } = await client()
+    .from("project_maps")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Восстановление карты из Корзины. */
+export async function restoreProjectMapRow(id: string) {
+  const { error } = await client().from("project_maps").update({ deleted_at: null }).eq("id", id);
+  if (error) throw error;
+}
+
+// ---------- Бэкапы (снимки всех данных) ----------
+
+/** Полный сырой снимок всех таблиц (включая удалённые строки). */
+export async function fetchFullSnapshot(): Promise<Record<string, unknown[]>> {
+  const c = client();
+  const tables = ["boards", "tasks", "journal", "task_comments", "members", "project_maps", "profiles"];
+  const out: Record<string, unknown[]> = {};
+  await Promise.all(
+    tables.map(async (t) => {
+      const { data, error } = await c.from(t).select("*");
+      out[t] = error ? [] : (data ?? []);
+    }),
+  );
+  return out;
+}
+
+/** Создать бэкап: снимок в таблицу backups. Возвращает метаданные. */
+export async function createBackupRow(
+  label: string,
+  kind: "manual" | "auto",
+  authorName: string,
+  userId: string | null,
+): Promise<BackupMeta> {
+  const data = await fetchFullSnapshot();
+  const counts: Record<string, number> = {};
+  for (const [k, v] of Object.entries(data)) counts[k] = v.length;
+  const id = (typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}`;
+  const createdAt = new Date().toISOString();
+  const { error } = await client().from("backups").insert({
+    id,
+    created_at: createdAt,
+    created_by: userId,
+    author_name: authorName,
+    label,
+    kind,
+    counts,
+    data,
+  });
+  if (error) throw error;
+  return { id, createdAt, createdBy: userId, authorName, label, kind, counts };
+}
+
+interface BackupRow {
+  id: string;
+  created_at: string;
+  created_by: string | null;
+  author_name: string | null;
+  label: string | null;
+  kind: string;
+  counts: Record<string, number>;
+}
+
+/** Список бэкапов (без тяжёлого поля data). */
+export async function fetchBackups(): Promise<BackupMeta[]> {
+  const { data, error } = await client()
+    .from("backups")
+    .select("id, created_at, created_by, author_name, label, kind, counts")
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as BackupRow[]).map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    createdBy: r.created_by,
+    authorName: r.author_name ?? "",
+    label: r.label ?? "",
+    kind: (r.kind === "auto" ? "auto" : "manual") as "manual" | "auto",
+    counts: r.counts ?? {},
+  }));
+}
+
+/** Данные одного бэкапа (для скачивания / восстановления). */
+export async function fetchBackupData(id: string): Promise<Record<string, unknown[]> | null> {
+  const { data, error } = await client().from("backups").select("data").eq("id", id).single();
+  if (error || !data) return null;
+  return (data as { data: Record<string, unknown[]> }).data;
+}
+
+export async function deleteBackupRow(id: string) {
+  const { error } = await client().from("backups").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Восстановление из бэкапа: upsert всех строк (по первичному ключу). */
+export async function restoreFromBackup(data: Record<string, unknown[]>) {
+  const c = client();
+  const order = ["boards", "members", "project_maps", "tasks", "journal", "task_comments", "profiles"];
+  for (const table of order) {
+    const rows = data[table];
+    if (!Array.isArray(rows) || rows.length === 0) continue;
+    const { error } = await c.from(table).upsert(rows as never[], { onConflict: "id" });
+    if (error) throw error;
+  }
 }
