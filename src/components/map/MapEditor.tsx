@@ -17,6 +17,7 @@ import {
   MarkerType,
   ConnectionLineType,
   ConnectionMode,
+  SelectionMode,
   type Connection,
   type Viewport,
   type OnSelectionChangeParams,
@@ -38,6 +39,8 @@ import {
   FileJson,
   Upload,
   Copy,
+  Hand,
+  BoxSelect,
 } from "lucide-react";
 import { useMaps } from "@/lib/maps";
 import { useCan } from "@/lib/access";
@@ -125,6 +128,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const [nameDraft, setNameDraft] = useState(map.name);
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<MapFilter>("all");
+  const [selectMode, setSelectMode] = useState(false); // рамочное выделение курсором
 
   const rf = useReactFlow();
   const searchParams = useSearchParams();
@@ -510,6 +514,19 @@ function EditorInner({ map }: { map: ProjectMap }) {
               <Lock className="h-3.5 w-3.5" /> Только просмотр
             </span>
           )}
+          {canEdit && (
+            <ToolbarBtn
+              onClick={() => setSelectMode((v) => !v)}
+              active={selectMode}
+              title={
+                selectMode
+                  ? "Выделение рамкой включено — тяни курсором по холсту, чтобы выделить блоки. Холст двигается средней/правой кнопкой. Клик — вернуть перетаскивание холста"
+                  : "Выделить блоки рамкой (тяни курсором). Холст пока двигается левой кнопкой"
+              }
+            >
+              {selectMode ? <BoxSelect className="h-4 w-4" /> : <Hand className="h-4 w-4" />}
+            </ToolbarBtn>
+          )}
           <ToolbarBtn onClick={() => rf.fitView({ padding: 0.2, duration: 300 })} title="Показать всё"><Maximize className="h-4 w-4" /></ToolbarBtn>
         </div>
       </div>
@@ -541,6 +558,11 @@ function EditorInner({ map }: { map: ProjectMap }) {
             nodesDraggable={canEdit}
             nodesConnectable={canEdit}
             elementsSelectable
+            selectionOnDrag={selectMode}
+            selectionMode={SelectionMode.Partial}
+            panOnDrag={selectMode ? [1, 2] : true}
+            selectNodesOnDrag={false}
+            multiSelectionKeyCode={["Meta", "Shift", "Control"]}
             connectionMode={ConnectionMode.Loose}
             connectionLineType={ConnectionLineType.SmoothStep}
             defaultEdgeOptions={edgeDefaults}
@@ -592,18 +614,24 @@ function ToolbarBtn({
   onClick,
   disabled,
   title,
+  active,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   title: string;
+  active?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
+      className={
+        active
+          ? "rounded-lg p-1.5 bg-primary/15 text-primary ring-1 ring-primary/40 transition"
+          : "rounded-lg p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-30"
+      }
     >
       {children}
     </button>
