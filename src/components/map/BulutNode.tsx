@@ -187,7 +187,8 @@ function StatusBadge({ stats }: { stats: NodeStats }) {
   const title =
     `${meta.label}` +
     (stats.total ? ` · задач: ${stats.total}` : "") +
-    (stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : "");
+    (stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : "") +
+    (stats.bugsFixed ? ` · исправлено (на проверке): ${stats.bugsFixed}` : "");
 
   if (stats.total === 0) {
     return (
@@ -241,6 +242,7 @@ function StatusCaption({ stats, override }: { stats: NodeStats; override?: "ok" 
             <span className="ml-auto font-semibold text-fg/70">
               {stats.total}
               {stats.bugsOpen ? ` · 🐞${stats.bugsOpen}` : ""}
+              {stats.bugsFixed ? ` · 🔧${stats.bugsFixed}` : ""}
             </span>
           )}
         </div>
@@ -272,13 +274,15 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
         ? false
         : filter === "bug"
           ? stats.status === "bug"
-          : filter === "work"
-            ? stats.status === "wip"
-            : filter === "ok"
-              ? stats.status === "ok"
-              : filter === "empty"
-                ? stats.total === 0
-                : true;
+          : filter === "fixed"
+            ? stats.status === "fixed"
+            : filter === "work"
+              ? stats.status === "wip"
+              : filter === "ok"
+                ? stats.status === "ok"
+                : filter === "empty"
+                  ? stats.total === 0
+                  : true;
   const dim = filter !== "all" && !matchesFilter ? "opacity-20 saturate-0 transition" : "transition";
   const color = data.color || NODE_KIND_META[kind]?.color || "#6366f1";
   const Icon = KIND_ICON[kind] ?? MousePointerClick;

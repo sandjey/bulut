@@ -653,7 +653,7 @@ function HealthStrip({
 }) {
   const { tasks, boards } = useStore();
   const agg = useMemo(() => {
-    const c = { ok: 0, wip: 0, bug: 0, empty: 0 };
+    const c = { ok: 0, wip: 0, bug: 0, fixed: 0, empty: 0 };
     let totalTasks = 0;
     let totalBugs = 0;
     let taskNodes = 0;
@@ -690,6 +690,7 @@ function HealthStrip({
       {pill("ok", "Работает", STATUS_META.ok.color, agg.ok)}
       {pill("work", "В работе", STATUS_META.wip.color, agg.wip)}
       {pill("bug", "Баги", STATUS_META.bug.color, agg.bug)}
+      {pill("fixed", "Исправлены", STATUS_META.fixed.color, agg.fixed)}
       {pill("empty", "Без задач", "#6b7280", agg.empty)}
       <span className="ml-auto text-faint">
         задач: {agg.totalTasks} · открытых багов: {agg.totalBugs}
@@ -870,9 +871,12 @@ function NodeTasksPanel({
         ))}
       </div>
 
-      <div className="mt-2 flex items-center gap-3 text-[11px] text-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
         <span>задач: <b className="text-fg">{stats.total}</b></span>
         {stats.bugsOpen > 0 && <span className="text-red-500">багов: {stats.bugsOpen}</span>}
+        {stats.bugsFixed > 0 && (
+          <span style={{ color: STATUS_META.fixed.color }}>исправлено (на проверке): {stats.bugsFixed}</span>
+        )}
         <span className="ml-auto">готово: {stats.done}/{stats.total}</span>
       </div>
 

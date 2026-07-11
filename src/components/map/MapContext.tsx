@@ -4,7 +4,7 @@ import { createContext, useContext, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { computeNodeStats, type StatusOverride, type NodeStats } from "@/lib/map-stats";
 
-export type MapFilter = "all" | "bug" | "work" | "empty" | "ok";
+export type MapFilter = "all" | "bug" | "fixed" | "work" | "empty" | "ok";
 
 /** Контекст текущей карты — mapId для агрегации задач + активный фильтр подсветки. */
 export const MapContext = createContext<{ mapId: string | null; filter: MapFilter }>({
