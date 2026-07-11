@@ -178,53 +178,46 @@ function Toolbar({
   );
 }
 
-/** Крупный угловой светофор-кружок (видно издалека). */
-function StatusBadge({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
+/**
+ * Угловой светофор: тихий цветной кружок по умолчанию (зелёный «работает»),
+ * а если есть задачи — пилюля со счётчиком. Баг пульсирует. Ничего лишнего.
+ */
+function StatusBadge({ stats }: { stats: NodeStats }) {
   const meta = STATUS_META[stats.status];
+  const title =
+    `${meta.label}` +
+    (stats.total ? ` · задач: ${stats.total}` : "") +
+    (stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : "");
+
+  if (stats.total === 0) {
+    return (
+      <span
+        title={title}
+        className={cn(
+          "nodrag absolute -right-1.5 -top-1.5 z-30 h-3.5 w-3.5 rounded-full border-2 border-black/40 shadow",
+          stats.status === "bug" && "bulut-pulse",
+        )}
+        style={{ backgroundColor: meta.color }}
+      />
+    );
+  }
   return (
     <div
-      className="nodrag absolute -right-2.5 -top-2.5 z-30 grid h-6 min-w-6 place-items-center rounded-full border-2 border-black/40 px-1 text-[11px] font-extrabold text-white shadow-lg"
+      title={title}
+      className="nodrag absolute -right-2 -top-2 z-30 grid h-5 min-w-5 place-items-center rounded-full border-2 border-black/40 px-1 text-[11px] font-extrabold text-white shadow-lg"
       style={{ backgroundColor: meta.color }}
-      title={`${meta.label}${stats.total ? ` · задач: ${stats.total}` : ""}${stats.bugsOpen ? ` · багов: ${stats.bugsOpen}` : ""}${override ? " · вручную" : ""}`}
     >
       <span className={cn("absolute -inset-0.5 rounded-full", stats.status === "bug" && "bulut-pulse")} />
-      {stats.total > 0 ? stats.total : "●"}
+      {stats.total}
     </div>
   );
 }
 
-/** Отдельная статус-часть внутри карточки: цвет, подпись, счётчики, прогресс по этапам. */
-function StatusBar({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
-  const m = STATUS_META[stats.status];
-  return (
-    <div
-      className="nodrag mt-1.5 w-full rounded-lg px-2 py-1.5"
-      style={{ background: withAlpha(m.color, 0.16), border: `1px solid ${withAlpha(m.color, 0.45)}` }}
-    >
-      <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: m.color }}>
-        <span className={cn("h-2.5 w-2.5 rounded-full", stats.status === "bug" && "bulut-pulse")} style={{ backgroundColor: m.color }} />
-        <span>{m.label}</span>
-        {override && <span className="rounded bg-black/20 px-1 text-[8px] uppercase">вручную</span>}
-        <span className="ml-auto font-semibold text-fg/80">
-          {stats.total > 0 ? `${stats.total} задач${stats.bugsOpen ? ` · 🐞 ${stats.bugsOpen}` : ""}` : "нет задач"}
-        </span>
-      </div>
-      {stats.total > 0 && (
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-black/25">
-            {stats.byStage.map((s) => (
-              <div
-                key={s.name}
-                title={`${s.name}: ${s.count}`}
-                style={{ width: `${(s.count / stats.total) * 100}%`, backgroundColor: withAlpha(m.color, 0.85) }}
-              />
-            ))}
-          </div>
-          <span className="text-[9px] font-semibold text-muted">{stats.done}/{stats.total}</span>
-        </div>
-      )}
-    </div>
-  );
+/** Свечение/обводка карточки по статусу (зелёная/жёлтая/красная) — без изменения размера. */
+function statusShadow(status: NodeStats["status"]): string {
+  const c = STATUS_META[status].color;
+  const outline = status === "ok" ? "" : `, 0 0 0 1.5px ${withAlpha(c, 0.8)}`;
+  return `0 10px 26px -14px ${withAlpha(c, status === "bug" ? 0.6 : 0.45)}${outline}`;
 }
 
 function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
@@ -351,12 +344,12 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
     ? {
         background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.72)})`,
         borderColor: "transparent",
-        boxShadow: `0 12px 28px -10px ${withAlpha(color, 0.65)}`,
+        boxShadow: statusShadow(stats.status),
       }
     : {
         background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,
         borderColor: isSelected ? "transparent" : withAlpha(color, 0.3),
-        boxShadow: `0 12px 30px -16px ${withAlpha(color, 0.55)}`,
+        boxShadow: statusShadow(stats.status),
       };
 
   return (
@@ -372,7 +365,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
         style={cardStyle}
       >
         <Handles color={color} />
-        <StatusBadge stats={stats} override={data.statusOverride} />
+        <StatusBadge stats={stats} />
         <span
           className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
           style={{
@@ -411,7 +404,6 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
             <GitBranch className="h-2.5 w-2.5" /> да / нет
           </div>
         )}
-        <StatusBar stats={stats} override={data.statusOverride} />
       </div>
       {resizer}
     </>
@@ -456,13 +448,13 @@ function LinkNode({
       style={{
         background: `linear-gradient(140deg, ${withAlpha(color, 0.16)}, ${withAlpha(color, 0.02)} 58%), rgb(var(--surface))`,
         borderColor: selected ? "transparent" : withAlpha(color, 0.3),
-        boxShadow: `0 12px 30px -16px ${withAlpha(color, 0.55)}`,
+        boxShadow: statusShadow(stats.status),
       }}
       onDoubleClick={open}
       title="Двойной клик — открыть"
     >
       <Handles color={color} />
-      <StatusBadge stats={stats} override={data.statusOverride} />
+      <StatusBadge stats={stats} />
       <span
         className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
         style={{ background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`, boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}` }}
@@ -473,7 +465,6 @@ function LinkNode({
         <div className="break-words text-sm font-semibold text-fg">{title}</div>
         <div className="break-words text-xs text-muted">{missing ? "источник удалён" : subtitle}</div>
       </div>
-      <StatusBar stats={stats} override={data.statusOverride} />
     </div>
   );
 }
