@@ -1,7 +1,7 @@
 import type { Task, Board } from "./types";
 
-/** Статус узла карты (светофор). */
-export type NodeStatus = "empty" | "ok" | "wip" | "bug";
+/** Статус узла карты (светофор). По умолчанию зелёный «работает». */
+export type NodeStatus = "ok" | "wip" | "bug";
 /** Ручной override (undefined = авто). */
 export type StatusOverride = "ok" | "wip" | "bug";
 
@@ -20,11 +20,11 @@ export interface NodeStats {
   auto: NodeStatus; // вычисленный статус
   status: NodeStatus; // эффективный (override или auto)
   overridden: boolean;
+  isEmpty: boolean; // нет привязанных задач
   tasks: Task[]; // привязанные задачи
 }
 
 export const STATUS_META: Record<NodeStatus, { color: string; label: string }> = {
-  empty: { color: "#6b7280", label: "Нет задач" },
   ok: { color: "#10b981", label: "Работает" },
   wip: { color: "#f59e0b", label: "В работе" },
   bug: { color: "#ef4444", label: "Баг" },
@@ -60,9 +60,9 @@ export function computeNodeStats(
   }
   const byStage = Array.from(stageMap, ([name, count]) => ({ name, count }));
 
+  // По умолчанию «работает» (зелёный). Красный — только при открытом баге.
   let auto: NodeStatus;
-  if (linked.length === 0) auto = "empty";
-  else if (bugsOpen > 0) auto = "bug";
+  if (bugsOpen > 0) auto = "bug";
   else if (active.length > 0) auto = "wip";
   else auto = "ok";
 
@@ -78,6 +78,7 @@ export function computeNodeStats(
     auto,
     status,
     overridden: !!override,
+    isEmpty: linked.length === 0,
     tasks: linked,
   };
 }

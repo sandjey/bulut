@@ -180,7 +180,6 @@ function Toolbar({
 
 /** Крупный угловой светофор-кружок (видно издалека). */
 function StatusBadge({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
-  if (stats.total === 0 && !override) return null;
   const meta = STATUS_META[stats.status];
   return (
     <div
@@ -196,7 +195,6 @@ function StatusBadge({ stats, override }: { stats: NodeStats; override?: "ok" | 
 
 /** Отдельная статус-часть внутри карточки: цвет, подпись, счётчики, прогресс по этапам. */
 function StatusBar({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
-  if (stats.total === 0 && !override) return null;
   const m = STATUS_META[stats.status];
   return (
     <div
@@ -208,7 +206,7 @@ function StatusBar({ stats, override }: { stats: NodeStats; override?: "ok" | "w
         <span>{m.label}</span>
         {override && <span className="rounded bg-black/20 px-1 text-[8px] uppercase">вручную</span>}
         <span className="ml-auto font-semibold text-fg/80">
-          {stats.total} задач{stats.bugsOpen ? ` · 🐞 ${stats.bugsOpen}` : ""}
+          {stats.total > 0 ? `${stats.total} задач${stats.bugsOpen ? ` · 🐞 ${stats.bugsOpen}` : ""}` : "нет задач"}
         </span>
       </div>
       {stats.total > 0 && (

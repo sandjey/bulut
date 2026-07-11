@@ -591,6 +591,7 @@ function HealthStrip({
       taskNodes++;
       const s = computeNodeStats(tasks, boards, mapId, n.id, n.data?.statusOverride);
       c[s.status] += 1;
+      if (s.isEmpty) c.empty += 1;
       totalTasks += s.total;
       totalBugs += s.bugsOpen;
     }
@@ -617,7 +618,7 @@ function HealthStrip({
       {pill("ok", "Работает", STATUS_META.ok.color, agg.ok)}
       {pill("work", "В работе", STATUS_META.wip.color, agg.wip)}
       {pill("bug", "Баги", STATUS_META.bug.color, agg.bug)}
-      {pill("empty", "Пустые", STATUS_META.empty.color, agg.empty)}
+      {pill("empty", "Без задач", "#6b7280", agg.empty)}
       <span className="ml-auto text-faint">
         задач: {agg.totalTasks} · открытых багов: {agg.totalBugs}
       </span>
