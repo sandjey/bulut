@@ -220,6 +220,45 @@ function statusShadow(status: NodeStats["status"]): string {
   return `0 10px 26px -14px ${withAlpha(c, status === "bug" ? 0.6 : 0.45)}${outline}`;
 }
 
+/**
+ * Подпись-статус ПОД карточкой (снаружи): подпись + счётчик + полоска по этапам.
+ * absolute + pointer-events-none — не меняет размер узла и не мешает соединять.
+ * Показывается только когда есть задачи/ручной статус (пустые узлы — чисто).
+ */
+function StatusCaption({ stats, override }: { stats: NodeStats; override?: "ok" | "wip" | "bug" }) {
+  if (stats.total === 0 && !override) return null;
+  const m = STATUS_META[stats.status];
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-full z-[5] mt-1.5 w-[94%] -translate-x-1/2">
+      <div
+        className="rounded-md px-2 py-1 text-[10px] shadow-sm backdrop-blur-sm"
+        style={{ background: withAlpha(m.color, 0.14), border: `1px solid ${withAlpha(m.color, 0.4)}` }}
+      >
+        <div className="flex items-center gap-1.5 font-bold" style={{ color: m.color }}>
+          <span className={cn("h-2 w-2 rounded-full", stats.status === "bug" && "bulut-pulse")} style={{ backgroundColor: m.color }} />
+          <span>{m.label}</span>
+          {stats.total > 0 && (
+            <span className="ml-auto font-semibold text-fg/70">
+              {stats.total}
+              {stats.bugsOpen ? ` · 🐞${stats.bugsOpen}` : ""}
+            </span>
+          )}
+        </div>
+        {stats.total > 0 && (
+          <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-black/25">
+            {stats.byStage.map((s) => (
+              <div
+                key={s.name}
+                style={{ width: `${(s.count / stats.total) * 100}%`, backgroundColor: withAlpha(m.color, 0.85) }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
   const rf = useReactFlow();
   const canEdit = useCan()("map.edit");
@@ -366,6 +405,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       >
         <Handles color={color} />
         <StatusBadge stats={stats} />
+        <StatusCaption stats={stats} override={data.statusOverride} />
         <span
           className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
           style={{
@@ -455,6 +495,7 @@ function LinkNode({
     >
       <Handles color={color} />
       <StatusBadge stats={stats} />
+      <StatusCaption stats={stats} override={data.statusOverride} />
       <span
         className="grid h-7 w-7 shrink-0 place-items-center rounded-xl text-white ring-1 ring-white/15"
         style={{ background: `linear-gradient(135deg, ${color}, ${withAlpha(color, 0.68)})`, boxShadow: `0 5px 14px -4px ${withAlpha(color, 0.65)}` }}
