@@ -158,7 +158,7 @@ export function permissionLabel(key: string): string {
 export const ROLE_META: Record<AppRole, { label: string; color: string }> = {
   owner: { label: "Владелец", color: "#f59e0b" },
   admin: { label: "Администратор", color: "#8b5cf6" },
-  member: { label: "Пользователь", color: "#64748b" },
+  member: { label: "Участник", color: "#64748b" },
 };
 
 /**

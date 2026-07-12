@@ -73,15 +73,6 @@ interface CommentRow {
   created_at: string;
 }
 
-interface MemberRow {
-  id: string;
-  user_id: string;
-  name: string;
-  email: string;
-  role: string;
-  color: string;
-  created_at: string;
-}
 
 interface JournalRow {
   id: string;
@@ -148,15 +139,6 @@ const toComment = (r: CommentRow): TaskComment => ({
   createdAt: r.created_at,
 });
 
-const toMember = (r: MemberRow): Member => ({
-  id: r.id,
-  name: r.name,
-  email: r.email ?? "",
-  role: r.role ?? "",
-  color: r.color ?? "#6366f1",
-  createdAt: r.created_at,
-});
-
 const toJournal = (r: JournalRow): JournalEntry => ({
   id: r.id,
   taskId: r.task_id,
@@ -197,19 +179,19 @@ export async function fetchAll(userId: string): Promise<AppData> {
   // Нет активной комнаты — нет данных (пусто, без падений).
   if (!activeWs) return { boards: [], tasks: [], journal: [], comments: [], members: [] };
   const ws = activeWs;
-  const [boardsRes, tasksRes, journalRes, commentsRes, membersRes] = await Promise.all([
+  const [boardsRes, tasksRes, journalRes, commentsRes] = await Promise.all([
     c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
     c.from("tasks").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
     c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
     c.from("task_comments").select("*").eq("workspace_id", ws).order("created_at", { ascending: true }),
-    c.from("members").select("*").order("name", { ascending: true }),
   ]);
   if (boardsRes.error) throw boardsRes.error;
   if (tasksRes.error) throw tasksRes.error;
   if (journalRes.error) throw journalRes.error;
-  // these tables may not exist yet (before later migrations) — degrade gracefully
+  // task_comments may be missing before its migration — degrade gracefully
   const comments = commentsRes.error ? [] : (commentsRes.data as CommentRow[]).map(toComment);
-  const members = membersRes.error ? [] : (membersRes.data as MemberRow[]).map(toMember);
+  // «members» (старая таблица команды) удалена — команда теперь = участники комнаты
+  const members: Member[] = [];
 
   // Фильтруем удалённые в JS (а не в SQL) — чтобы код не падал, если миграция
   // с deleted_at ещё не применена: тогда deletedAt = null и всё видно.
