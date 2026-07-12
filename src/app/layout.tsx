@@ -4,6 +4,7 @@ import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { AuthProvider } from "@/lib/auth";
 import { AccessProvider } from "@/lib/access";
+import { WorkspaceProvider } from "@/lib/workspace";
 import { MapsProvider } from "@/lib/maps";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { AppShell } from "@/components/AppShell";
@@ -46,13 +47,15 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             <AuthGate>
-              <AccessProvider>
-                <MapsProvider>
-                  <StoreProvider>
-                    <AppShell>{children}</AppShell>
-                  </StoreProvider>
-                </MapsProvider>
-              </AccessProvider>
+              <WorkspaceProvider>
+                <AccessProvider>
+                  <MapsProvider>
+                    <StoreProvider>
+                      <AppShell>{children}</AppShell>
+                    </StoreProvider>
+                  </MapsProvider>
+                </AccessProvider>
+              </WorkspaceProvider>
             </AuthGate>
           </AuthProvider>
         </ThemeProvider>

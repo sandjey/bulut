@@ -10,6 +10,7 @@ import React, {
   useState,
 } from "react";
 import { useAuth } from "./auth";
+import { useWorkspace } from "./workspace";
 import { getSupabase } from "./supabase";
 import * as db from "./db";
 import { ProjectMap, MapGraph, EMPTY_GRAPH } from "./map-types";
@@ -46,6 +47,7 @@ const MapsContext = createContext<MapsContextValue | null>(null);
 export function MapsProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const { activeId } = useWorkspace();
 
   const [maps, setMaps] = useState<ProjectMap[]>([]);
   const [ready, setReady] = useState(false);
@@ -71,7 +73,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   // Загрузка
   useEffect(() => {
     let cancelled = false;
-    if (!userId) {
+    if (!userId || !activeId) {
       apply([]);
       applyTrash([]);
       setReady(false);
@@ -93,7 +95,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, apply, applyTrash, refreshTrashedMaps]);
+  }, [userId, activeId, apply, applyTrash, refreshTrashedMaps]);
 
   // Realtime: обновляем список, но не затираем карту с несохранёнными правками
   useEffect(() => {

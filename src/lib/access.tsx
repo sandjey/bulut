@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { useAuth } from "./auth";
 import { getSupabase } from "./supabase";
 import { setMe } from "./me";
+import { useWorkspace } from "./workspace";
 import * as db from "./db";
 import {
   AppRole,
@@ -159,20 +160,23 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     return m;
   }, [profiles]);
 
-  const role: AppRole = me?.role ?? "member";
+  // Роль и права — из членства в АКТИВНОЙ комнате (мультиарендность).
+  const ws = useWorkspace();
+  const role: AppRole = ws.myRole ?? "member";
   const isOwner = role === "owner";
   const isAdmin = role === "owner" || role === "admin";
+  const wsPerms = ws.myPermissions;
 
   const can = useCallback(
     (perm: PermissionKey): boolean => {
       // Миграция ещё не применена — не ломаем приложение (но админку не открываем).
       if (degraded) return perm !== "admin.access";
       if (role === "owner" || role === "admin") return true;
-      // Нет профиля (удалён из проекта / не создан) → нет доступа.
-      if (!me) return false;
-      return me.permissions.includes(perm);
+      // Приглашённый участник без явных прав получает базовый набор (не заперт).
+      const perms = wsPerms.length ? wsPerms : DEFAULT_MEMBER_PERMISSIONS;
+      return perms.includes(perm);
     },
-    [degraded, role, me],
+    [degraded, role, wsPerms],
   );
 
   const canManage = useCallback(

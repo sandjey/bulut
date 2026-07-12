@@ -26,6 +26,7 @@ import { cn, avatarColor, initials, contrastText, withAlpha } from "@/lib/utils"
 import { ThemeToggle } from "./ThemeToggle";
 import { Logo } from "./Logo";
 import { CreateBoardDialog } from "./CreateBoardDialog";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -96,7 +97,9 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
         </div>
       </div>
 
-      <div className="px-3 pb-1">
+      <WorkspaceSwitcher onNavigate={onNavigate} />
+
+      <div className="px-3 pb-1 pt-2">
         <button
           onClick={onOpenSearch}
           className="group flex w-full items-center gap-2.5 rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-muted transition hover:border-border-strong hover:bg-surface-2"

@@ -17,6 +17,7 @@ import {
 } from "./types";
 import type { AppRole, PermissionKey, Profile } from "./permissions";
 import type { ProjectMap, MapGraph } from "./map-types";
+import type { Workspace, WorkspaceMember, Invitation, AppNotification } from "./workspace-types";
 
 // ---------- Row types (snake_case, as stored in Postgres) ----------
 interface BoardRow {
@@ -176,14 +177,31 @@ function client() {
   return c;
 }
 
+// ---------- Активная комната (workspace) ----------
+// Все записи/чтения основных данных ограничены активной комнатой.
+let activeWs: string | null = null;
+export function setActiveWorkspace(id: string | null) {
+  activeWs = id;
+}
+export function getActiveWorkspace(): string | null {
+  return activeWs;
+}
+function wsId(): string {
+  if (!activeWs) throw new Error("Комната не выбрана");
+  return activeWs;
+}
+
 // ---------- Bulk load ----------
 export async function fetchAll(userId: string): Promise<AppData> {
   const c = client();
+  // Нет активной комнаты — нет данных (пусто, без падений).
+  if (!activeWs) return { boards: [], tasks: [], journal: [], comments: [], members: [] };
+  const ws = activeWs;
   const [boardsRes, tasksRes, journalRes, commentsRes, membersRes] = await Promise.all([
-    c.from("boards").select("*").order("position", { ascending: true }),
-    c.from("tasks").select("*").order("position", { ascending: true }),
-    c.from("journal").select("*").order("date", { ascending: false }),
-    c.from("task_comments").select("*").order("created_at", { ascending: true }),
+    c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
+    c.from("tasks").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
+    c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
+    c.from("task_comments").select("*").eq("workspace_id", ws).order("created_at", { ascending: true }),
     c.from("members").select("*").order("name", { ascending: true }),
   ]);
   if (boardsRes.error) throw boardsRes.error;
@@ -208,10 +226,12 @@ export async function fetchAll(userId: string): Promise<AppData> {
 /** Загрузка Корзины: удалённые доски/задачи/записи журнала. */
 export async function fetchTrash(): Promise<import("./types").TrashData> {
   const c = client();
+  if (!activeWs) return { boards: [], tasks: [], journal: [] };
+  const ws = activeWs;
   const [boardsRes, tasksRes, journalRes] = await Promise.all([
-    c.from("boards").select("*").order("created_at", { ascending: false }),
-    c.from("tasks").select("*").order("created_at", { ascending: false }),
-    c.from("journal").select("*").order("date", { ascending: false }),
+    c.from("boards").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+    c.from("tasks").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+    c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
   ]);
   // если колонки deleted_at ещё нет — вернём пустую корзину, а не упадём
   if (boardsRes.error || tasksRes.error || journalRes.error) {
@@ -259,6 +279,7 @@ export async function insertBoard(b: Board, userId: string, position: number) {
   const { error } = await client().from("boards").insert({
     id: b.id,
     user_id: userId,
+    workspace_id: wsId(),
     name: b.name,
     color: b.color,
     columns: b.columns,
@@ -373,6 +394,7 @@ function taskToRow(t: Task, userId: string) {
   return {
     id: t.id,
     user_id: userId,
+    workspace_id: wsId(),
     board_id: t.boardId,
     column_id: t.columnId,
     title: t.title,
@@ -407,6 +429,7 @@ export async function insertComment(comment: TaskComment, userId: string) {
   const { error } = await client().from("task_comments").insert({
     id: comment.id,
     user_id: userId,
+    workspace_id: wsId(),
     task_id: comment.taskId,
     author: comment.author,
     text: comment.text,
@@ -426,6 +449,7 @@ export async function insertJournal(e: JournalEntry, userId: string) {
   const { error } = await client().from("journal").insert({
     id: e.id,
     user_id: userId,
+    workspace_id: wsId(),
     task_id: e.taskId,
     date: e.date,
     board_name: e.boardName,
@@ -576,9 +600,11 @@ const toMap = (r: ProjectMapRow): ProjectMap => ({
 });
 
 export async function fetchProjectMaps(): Promise<ProjectMap[]> {
+  if (!activeWs) return [];
   const { data, error } = await client()
     .from("project_maps")
     .select("*")
+    .eq("workspace_id", activeWs)
     .order("position", { ascending: true });
   if (error) throw error;
   // фильтр удалённых в JS — migration-safe (нет колонки → всё видно)
@@ -587,9 +613,11 @@ export async function fetchProjectMaps(): Promise<ProjectMap[]> {
 
 /** Удалённые карты (Корзина). */
 export async function fetchTrashMaps(): Promise<ProjectMap[]> {
+  if (!activeWs) return [];
   const { data, error } = await client()
     .from("project_maps")
     .select("*")
+    .eq("workspace_id", activeWs)
     .order("created_at", { ascending: false });
   if (error) return [];
   return (data as ProjectMapRow[]).map(toMap).filter((m) => !!m.deletedAt);
@@ -603,6 +631,7 @@ export async function insertProjectMap(
   const { error } = await client().from("project_maps").insert({
     id: m.id,
     user_id: userId,
+    workspace_id: wsId(),
     name: m.name,
     color: m.color,
     graph: m.graph,
@@ -650,11 +679,14 @@ export async function restoreProjectMapRow(id: string) {
 /** Полный сырой снимок всех таблиц (включая удалённые строки). */
 export async function fetchFullSnapshot(): Promise<Record<string, unknown[]>> {
   const c = client();
-  const tables = ["boards", "tasks", "journal", "task_comments", "members", "project_maps", "profiles"];
+  // Снимок делаем в пределах активной комнаты.
+  const tables = ["boards", "tasks", "journal", "task_comments", "project_maps"];
   const out: Record<string, unknown[]> = {};
   await Promise.all(
     tables.map(async (t) => {
-      const { data, error } = await c.from(t).select("*");
+      let q = c.from(t).select("*");
+      if (activeWs) q = q.eq("workspace_id", activeWs);
+      const { data, error } = await q;
       out[t] = error ? [] : (data ?? []);
     }),
   );
@@ -677,6 +709,7 @@ export async function createBackupRow(
     id,
     created_at: createdAt,
     created_by: userId,
+    workspace_id: activeWs,
     author_name: authorName,
     label,
     kind,
@@ -699,9 +732,11 @@ interface BackupRow {
 
 /** Список бэкапов (без тяжёлого поля data). */
 export async function fetchBackups(): Promise<BackupMeta[]> {
+  if (!activeWs) return [];
   const { data, error } = await client()
     .from("backups")
     .select("id, created_at, created_by, author_name, label, kind, counts")
+    .eq("workspace_id", activeWs)
     .order("created_at", { ascending: false });
   if (error) return [];
   return (data as BackupRow[]).map((r) => ({
@@ -730,11 +765,233 @@ export async function deleteBackupRow(id: string) {
 /** Восстановление из бэкапа: upsert всех строк (по первичному ключу). */
 export async function restoreFromBackup(data: Record<string, unknown[]>) {
   const c = client();
-  const order = ["boards", "members", "project_maps", "tasks", "journal", "task_comments", "profiles"];
+  const order = ["boards", "project_maps", "tasks", "journal", "task_comments"];
   for (const table of order) {
     const rows = data[table];
     if (!Array.isArray(rows) || rows.length === 0) continue;
     const { error } = await c.from(table).upsert(rows as never[], { onConflict: "id" });
     if (error) throw error;
   }
+}
+
+// ============================================================
+//  Комнаты (workspaces), участники, приглашения, уведомления
+// ============================================================
+
+/** Мои комнаты (через членство) с моей ролью/правами в каждой. */
+export async function fetchMyWorkspaces(userId: string): Promise<Workspace[]> {
+  const { data, error } = await client()
+    .from("workspace_members")
+    .select("role, permissions, workspaces(id, name, color, owner_id, created_at)")
+    .eq("user_id", userId);
+  if (error) throw error;
+  type Row = {
+    role: AppRole;
+    permissions: string[] | null;
+    workspaces: { id: string; name: string; color: string; owner_id: string | null; created_at: string } | null;
+  };
+  return (data as unknown as Row[])
+    .filter((r) => r.workspaces)
+    .map((r) => ({
+      id: r.workspaces!.id,
+      name: r.workspaces!.name,
+      color: r.workspaces!.color ?? "#6366f1",
+      ownerId: r.workspaces!.owner_id,
+      createdAt: r.workspaces!.created_at,
+      myRole: (r.role ?? "member") as AppRole,
+      myPermissions: (r.permissions ?? []) as PermissionKey[],
+    }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** Создать комнату (RPC), вернуть её id. */
+export async function createWorkspaceRpc(name: string, color: string): Promise<string> {
+  const { data, error } = await client().rpc("create_workspace", { p_name: name, p_color: color });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function updateWorkspaceRow(id: string, patch: { name?: string; color?: string }) {
+  const row: Record<string, unknown> = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.color !== undefined) row.color = patch.color;
+  const { error } = await client().from("workspaces").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteWorkspaceRow(id: string) {
+  const { error } = await client().from("workspaces").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Участники комнаты (join на профили для имени/фото). */
+export async function fetchMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const { data, error } = await client()
+    .from("workspace_members")
+    .select("id, workspace_id, user_id, role, permissions, created_at, profiles(name, email, avatar)")
+    .eq("workspace_id", workspaceId);
+  if (error) throw error;
+  type Row = {
+    id: string;
+    workspace_id: string;
+    user_id: string;
+    role: AppRole;
+    permissions: string[] | null;
+    created_at: string;
+    profiles: { name: string | null; email: string | null; avatar: string | null } | null;
+  };
+  return (data as unknown as Row[]).map((r) => ({
+    id: r.id,
+    workspaceId: r.workspace_id,
+    userId: r.user_id,
+    role: (r.role ?? "member") as AppRole,
+    permissions: (r.permissions ?? []) as PermissionKey[],
+    createdAt: r.created_at,
+    name: r.profiles?.name || r.profiles?.email || "Участник",
+    email: r.profiles?.email ?? "",
+    avatar: r.profiles?.avatar ?? null,
+  }));
+}
+
+export async function updateWsMemberRow(
+  id: string,
+  patch: { role?: AppRole; permissions?: PermissionKey[] },
+) {
+  const row: Record<string, unknown> = {};
+  if (patch.role !== undefined) row.role = patch.role;
+  if (patch.permissions !== undefined) row.permissions = patch.permissions;
+  const { error } = await client().from("workspace_members").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function removeMemberRow(id: string) {
+  const { error } = await client().from("workspace_members").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function leaveWorkspaceDb(workspaceId: string, userId: string) {
+  const { error } = await client()
+    .from("workspace_members")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
+/** Пригласить в комнату (RPC): создаёт invite + уведомление. Возвращает токен. */
+export async function inviteToWorkspaceRpc(
+  workspaceId: string,
+  email: string,
+  role: AppRole,
+): Promise<{ token: string; workspace: string }> {
+  const { data, error } = await client().rpc("invite_to_workspace", {
+    p_ws: workspaceId,
+    p_email: email,
+    p_role: role,
+  });
+  if (error) throw error;
+  return data as { token: string; workspace: string };
+}
+
+const toInvite = (r: {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: AppRole;
+  token: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+}): Invitation => ({
+  id: r.id,
+  workspaceId: r.workspace_id,
+  email: r.email,
+  role: (r.role ?? "member") as AppRole,
+  token: r.token,
+  status: (r.status ?? "pending") as Invitation["status"],
+  createdAt: r.created_at,
+  expiresAt: r.expires_at,
+});
+
+/** Приглашения комнаты (для владельца/админа). */
+export async function fetchInvitations(workspaceId: string): Promise<Invitation[]> {
+  const { data, error } = await client()
+    .from("invitations")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  return (data as Parameters<typeof toInvite>[0][]).map(toInvite);
+}
+
+export async function revokeInvitation(id: string) {
+  const { error } = await client().from("invitations").update({ status: "revoked" }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Приглашения на мою почту (ожидающие). */
+export async function fetchMyPendingInvites(email: string): Promise<Invitation[]> {
+  const { data, error } = await client()
+    .from("invitations")
+    .select("*, workspaces(name)")
+    .eq("email", email.toLowerCase())
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) return [];
+  type Row = Parameters<typeof toInvite>[0] & { workspaces: { name: string } | null };
+  return (data as Row[]).map((r) => ({ ...toInvite(r), workspaceName: r.workspaces?.name }));
+}
+
+/** Принять приглашение (RPC), вернуть id комнаты. */
+export async function acceptInvitationRpc(token: string): Promise<string> {
+  const { data, error } = await client().rpc("accept_invitation", { p_token: token });
+  if (error) throw error;
+  return data as string;
+}
+
+const toNotif = (r: {
+  id: string;
+  user_id: string;
+  workspace_id: string | null;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  created_at: string;
+}): AppNotification => ({
+  id: r.id,
+  userId: r.user_id,
+  workspaceId: r.workspace_id,
+  type: r.type,
+  title: r.title ?? "",
+  body: r.body ?? "",
+  link: r.link,
+  read: !!r.read,
+  createdAt: r.created_at,
+});
+
+export async function fetchNotifications(userId: string): Promise<AppNotification[]> {
+  const { data, error } = await client()
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) return [];
+  return (data as Parameters<typeof toNotif>[0][]).map(toNotif);
+}
+
+export async function markNotificationRead(id: string) {
+  const { error } = await client().from("notifications").update({ read: true }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead(userId: string) {
+  const { error } = await client()
+    .from("notifications")
+    .update({ read: true })
+    .eq("user_id", userId)
+    .eq("read", false);
+  if (error) throw error;
 }

@@ -32,6 +32,7 @@ import * as db from "./db";
 import { loadCache, saveCache } from "./cache";
 import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
+import { useWorkspace } from "./workspace";
 import { getMe } from "./me";
 import { avatarColor } from "./utils";
 import { JournalTrigger } from "./settings";
@@ -231,6 +232,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const userEmail = user?.email ?? "";
+  const { activeId } = useWorkspace();
+  // Кэш и данные привязаны к паре (пользователь, комната).
+  const cacheKey = userId && activeId ? `${userId}:${activeId}` : null;
 
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
@@ -270,7 +274,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // flash on reload / navigation), then refresh from Supabase in the background.
   useEffect(() => {
     let cancelled = false;
-    if (!userId) {
+    if (!userId || !activeId) {
       apply(EMPTY);
       applyTrash(EMPTY_TRASH);
       setBackups([]);
@@ -278,11 +282,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const cached = loadCache(userId);
+    const cached = cacheKey ? loadCache(cacheKey) : null;
     if (cached) {
       apply(cached);
       setReady(true); // show cached data immediately
     } else {
+      apply(EMPTY); // другая комната — не показываем чужие данные из прошлого стейта
       setReady(false);
     }
 
@@ -302,12 +307,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, apply, applyTrash, refreshTrash, EMPTY_TRASH]);
+  }, [userId, activeId, cacheKey, apply, applyTrash, refreshTrash, EMPTY_TRASH]);
 
-  // Write-through: persist every state change to the offline cache
+  // Write-through: persist every state change to the offline cache (по комнате)
   useEffect(() => {
-    if (userId && ready) saveCache(userId, data);
-  }, [data, userId, ready]);
+    if (cacheKey && ready) saveCache(cacheKey, data);
+  }, [data, cacheKey, ready]);
 
   // Real-time: subscribe to all table changes so every user sees updates instantly
   useEffect(() => {

@@ -71,3 +71,48 @@ export async function sendOtpEmail(email: string, code: string, name: string): P
     html: otpEmailHtml(code, name),
   });
 }
+
+function inviteEmailHtml(workspace: string, url: string): string {
+  return `<!doctype html>
+<html><body style="margin:0;background:#0b0f1a;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr><td align="center">
+      <table role="presentation" width="460" cellpadding="0" cellspacing="0"
+             style="max-width:460px;width:100%;background:#141a2b;border:1px solid #243049;border-radius:20px;overflow:hidden">
+        <tr><td style="padding:36px 36px 12px">
+          <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.02em">Bulut</div>
+          <div style="font-size:13px;color:#8b97b3;margin-top:2px">Приглашение в команду</div>
+        </td></tr>
+        <tr><td style="padding:8px 36px 4px">
+          <p style="color:#c7d0e6;font-size:15px;line-height:1.6;margin:0">
+            Вас пригласили присоединиться к комнате
+            <b style="color:#fff">«${escapeHtml(workspace)}»</b> в Bulut.
+          </p>
+        </td></tr>
+        <tr><td style="padding:22px 36px">
+          <a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;
+             font-size:15px;font-weight:700;padding:13px 26px;border-radius:12px">Принять приглашение</a>
+        </td></tr>
+        <tr><td style="padding:0 36px 32px">
+          <p style="color:#8b97b3;font-size:13px;line-height:1.6;margin:0">
+            Или откройте ссылку: <br><span style="color:#6f7b94;word-break:break-all">${url}</span><br><br>
+            Приглашение действует 14 дней. Если это ошибка — просто игнорируйте письмо.
+          </p>
+        </td></tr>
+      </table>
+      <div style="color:#5a6684;font-size:12px;margin-top:16px">© Bulut — менеджер задач</div>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+export async function sendInviteEmail(email: string, workspace: string, url: string): Promise<void> {
+  const { transport, from } = await getTransport();
+  await transport.sendMail({
+    from,
+    to: email,
+    subject: `Приглашение в «${workspace}» — Bulut`,
+    text: `Вас пригласили в комнату «${workspace}» в Bulut.\nПринять: ${url}\nСсылка действует 14 дней.`,
+    html: inviteEmailHtml(workspace, url),
+  });
+}
