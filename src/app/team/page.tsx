@@ -3,10 +3,8 @@
 import { useMemo } from "react";
 import { Users, Mail, CheckCircle2, Clock } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { useAccess } from "@/lib/access";
 import { useTeam } from "@/lib/team";
 import { RoleBadge } from "@/components/RoleBadge";
-import { MEMBER_ROLES } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
 import { RequirePerm } from "@/components/RequirePerm";
 import { Avatar } from "@/components/Avatar";
@@ -23,7 +21,6 @@ export default function TeamPage() {
 
 function TeamPageInner() {
   const { tasks } = useStore();
-  const access = useAccess();
   const team = useTeam();
 
   const counts = useMemo(() => {
@@ -55,12 +52,6 @@ function TeamPageInner() {
           <RoomInvitePanel />
         </div>
 
-        <datalist id="role-list">
-          {MEMBER_ROLES.map((r) => (
-            <option key={r} value={r} />
-          ))}
-        </datalist>
-
         {team.length === 0 ? (
           <div className="mt-10 flex flex-col items-center rounded-2xl border border-dashed border-border py-16 text-center">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-2 text-muted">
@@ -76,38 +67,13 @@ function TeamPageInner() {
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {team.map((m) => {
               const c = counts.get(m.name);
-              const profile = access.profiles.find((p) => p.id === m.key) ?? null;
-              const editable = profile ? access.canEditProfile(profile) : false;
               return (
                 <div key={m.key} className={cn("card group p-4", m.deleted && "opacity-60")}>
                   <div className="flex items-start gap-3">
                     <Avatar name={m.name} size={44} src={m.avatar} />
                     <div className="min-w-0 flex-1">
-                      <input
-                        defaultValue={m.name}
-                        key={`n-${m.key}-${m.name}`}
-                        readOnly={!editable}
-                        onBlur={(e) => {
-                          if (!editable) return;
-                          const v = e.target.value.trim();
-                          if (v && v !== m.name) access.updateProfile(m.key, { name: v });
-                          else e.target.value = m.name;
-                        }}
-                        className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 font-semibold outline-none transition hover:border-border focus:border-brand focus:bg-surface read-only:hover:border-transparent"
-                      />
-                      <input
-                        defaultValue={m.role}
-                        key={`r-${m.key}-${m.role}`}
-                        list="role-list"
-                        placeholder="Должность…"
-                        readOnly={!editable}
-                        onBlur={(e) => {
-                          if (!editable) return;
-                          const v = e.target.value;
-                          if (v !== m.role) access.updateProfile(m.key, { jobRole: v });
-                        }}
-                        className="mt-0.5 w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-muted outline-none transition hover:border-border focus:border-brand focus:bg-surface read-only:hover:border-transparent"
-                      />
+                      <div className="truncate font-semibold">{m.name}</div>
+                      <div className="truncate text-sm text-muted">{m.role || "—"}</div>
                     </div>
                   </div>
 
