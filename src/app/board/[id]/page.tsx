@@ -4,10 +4,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-import { Plus, Download, ArrowLeft, Pencil, Check } from "lucide-react";
+import { Plus, Download, ArrowLeft, Pencil, Check, Columns3, List as ListIcon, CalendarDays } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { BoardColumn } from "@/components/BoardColumn";
+import { BoardListView } from "@/components/board/BoardListView";
+import { BoardCalendarView } from "@/components/board/BoardCalendarView";
 import { TaskModal } from "@/components/TaskModal";
 import { FilterBar } from "@/components/FilterBar";
 import { ExportModal } from "@/components/ExportModal";
@@ -54,6 +56,16 @@ function BoardPageInner() {
   const [newColName, setNewColName] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [view, setView] = useState<"board" | "list" | "calendar">("board");
+
+  useEffect(() => {
+    const v = localStorage.getItem("bulut.boardView");
+    if (v === "list" || v === "calendar" || v === "board") setView(v);
+  }, []);
+  const changeView = (v: "board" | "list" | "calendar") => {
+    setView(v);
+    localStorage.setItem("bulut.boardView", v);
+  };
 
   const boardTasks = useMemo(
     () => tasks.filter((t) => t.boardId === boardId),
@@ -194,6 +206,26 @@ function BoardPageInner() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Переключатель вида — один компактный сегмент */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-2/50 p-0.5">
+              {([
+                ["board", Columns3, "Доска"],
+                ["list", ListIcon, "Список"],
+                ["calendar", CalendarDays, "Календарь"],
+              ] as const).map(([v, Icon, label]) => (
+                <button
+                  key={v}
+                  onClick={() => changeView(v)}
+                  title={label}
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition ${
+                    view === v ? "bg-surface font-medium text-fg shadow-soft" : "text-muted hover:text-fg"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden md:inline">{label}</span>
+                </button>
+              ))}
+            </div>
             {canExport && (
               <button className="btn-outline" onClick={() => setExportOpen(true)}>
                 <Download className="h-4 w-4" />
@@ -214,7 +246,12 @@ function BoardPageInner() {
         </div>
       </div>
 
-      {/* Columns */}
+      {/* Список / Календарь */}
+      {view === "list" && <BoardListView board={board} tasks={filtered} onOpen={openEdit} />}
+      {view === "calendar" && <BoardCalendarView tasks={filtered} onOpen={openEdit} />}
+
+      {/* Доска (канбан) */}
+      {view === "board" && (
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="board-scroll flex flex-1 gap-4 overflow-x-auto p-4 sm:p-6">
           {board.columns.map((col) => (
@@ -262,6 +299,7 @@ function BoardPageInner() {
           )}
         </div>
       </DragDropContext>
+      )}
 
       <TaskModal
         open={modalOpen}
