@@ -10,6 +10,7 @@ import { MEMBER_ROLES } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
 import { RequirePerm } from "@/components/RequirePerm";
 import { Avatar } from "@/components/Avatar";
+import { cn } from "@/lib/utils";
 
 export default function TeamPage() {
   return (
@@ -73,9 +74,9 @@ function TeamPageInner() {
               const editable = profile ? access.canEditProfile(profile) : false;
               const roleMeta = ROLE_META[m.accountRole];
               return (
-                <div key={m.key} className="card group p-4">
+                <div key={m.key} className={cn("card group p-4", m.deleted && "opacity-60")}>
                   <div className="flex items-start gap-3">
-                    <Avatar name={m.name} size={44} />
+                    <Avatar name={m.name} size={44} src={m.avatar} />
                     <div className="min-w-0 flex-1">
                       <input
                         defaultValue={m.name}
@@ -114,6 +115,11 @@ function TeamPageInner() {
                       {m.accountRole === "admin" && <ShieldCheck className="h-3 w-3" />}
                       {roleMeta.label}
                     </span>
+                    {m.deleted && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-faint">
+                        удалённый аккаунт
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-2.5 flex items-center gap-1.5 text-sm text-muted">

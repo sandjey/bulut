@@ -486,6 +486,8 @@ interface ProfileRow {
   role: AppRole;
   permissions: string[];
   created_at: string;
+  avatar: string | null;
+  deleted_at: string | null;
 }
 
 const toProfile = (r: ProfileRow): Profile => ({
@@ -496,6 +498,8 @@ const toProfile = (r: ProfileRow): Profile => ({
   role: (r.role ?? "member") as AppRole,
   permissions: (r.permissions ?? []) as PermissionKey[],
   createdAt: r.created_at,
+  avatar: r.avatar ?? null,
+  deletedAt: r.deleted_at ?? null,
 });
 
 /** Все профили (для раздела администрирования и команды). */
@@ -513,11 +517,24 @@ export async function updateProfilePermissions(id: string, permissions: Permissi
   if (error) throw error;
 }
 
-export async function updateProfileFields(id: string, patch: { name?: string; jobRole?: string }) {
+export async function updateProfileFields(
+  id: string,
+  patch: { name?: string; jobRole?: string; avatar?: string | null },
+) {
   const row: Record<string, unknown> = {};
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.jobRole !== undefined) row.job_role = patch.jobRole;
+  if (patch.avatar !== undefined) row.avatar = patch.avatar;
   const { error } = await client().from("profiles").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+/** Мягкое удаление профиля: помечаем deleted_at. Контент (доски/задачи/…) не трогаем. */
+export async function softDeleteProfile(id: string) {
+  const { error } = await client()
+    .from("profiles")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) throw error;
 }
 

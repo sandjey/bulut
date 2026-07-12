@@ -19,6 +19,8 @@ export interface Profile {
   role: AppRole;
   permissions: PermissionKey[];
   createdAt: string;
+  avatar?: string | null; // фото профиля (data URL) или null
+  deletedAt?: string | null; // ISO — профиль удалён (аккаунт деактивирован)
 }
 
 export type PermissionKey =

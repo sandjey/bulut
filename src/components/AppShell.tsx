@@ -5,7 +5,6 @@ import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { GlobalSearch } from "./GlobalSearch";
 import { Logo } from "./Logo";
-import { MePicker } from "./MePicker";
 import { NotificationsBell } from "./NotificationsBell";
 import { useStore } from "@/lib/store";
 
@@ -67,7 +66,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="font-bold brand-text font-display">Bulut</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <MePicker />
             <NotificationsBell />
           </div>
         </header>

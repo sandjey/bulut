@@ -10,8 +10,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { TypeBadge } from "@/components/TypeBadge";
 import { PriorityDot } from "@/components/PriorityDot";
 import { DeadlineBadge } from "@/components/DeadlineBadge";
-import { MePicker } from "@/components/MePicker";
-import { Avatar } from "@/components/Avatar";
 import { todayISO } from "@/lib/date";
 import { effectiveDueDate } from "@/lib/deadlines";
 import { Task } from "@/lib/types";
@@ -27,19 +25,7 @@ export default function MyTasksPage() {
 
 function MyTasksPageInner() {
   const { tasks, boards } = useStore();
-  const [me, setMe] = useMe();
-
-  // who actually has active tasks (for the diagnostic empty state)
-  const activeByAssignee = useMemo(() => {
-    const map = new Map<string, number>();
-    tasks
-      .filter((t) => t.status !== "done")
-      .forEach((t) => {
-        const key = t.assignee || "Без исполнителя";
-        map.set(key, (map.get(key) ?? 0) + 1);
-      });
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [tasks]);
+  const [me] = useMe(); // личность из аккаунта (задаётся автоматически)
 
   const groups = useMemo(() => {
     const today = todayISO();
@@ -61,10 +47,15 @@ function MyTasksPageInner() {
           <UserCircle2 className="h-7 w-7" />
         </div>
         <div>
-          <p className="text-lg font-semibold">Укажите, кто вы</p>
-          <p className="mt-1 text-sm text-muted">Выберите участника — и здесь появятся ваши задачи.</p>
+          <p className="text-lg font-semibold">Заполните имя в профиле</p>
+          <p className="mt-1 text-sm text-muted">
+            Здесь появятся задачи, назначенные на вас. Укажите имя в{" "}
+            <Link href="/profile" className="text-brand underline">
+              профиле
+            </Link>
+            .
+          </p>
         </div>
-        <MePicker />
       </div>
     );
   }
@@ -75,42 +66,15 @@ function MyTasksPageInner() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <PageHeader title="Мои задачи" subtitle={`Активные задачи: ${me}`}>
-          <MePicker />
-        </PageHeader>
+        <PageHeader title="Мои задачи" subtitle={`Активные задачи: ${me}`} />
 
         {total === 0 ? (
           <div className="mt-8 rounded-2xl border border-dashed border-border p-8 text-center">
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500" />
-            <p className="mt-3 font-medium">
-              На «{me}» активных задач нет
+            <p className="mt-3 font-medium">На «{me}» активных задач нет 🎉</p>
+            <p className="mt-1 text-sm text-muted">
+              Задачи появятся здесь, когда их назначат на вас.
             </p>
-            {activeByAssignee.length > 0 ? (
-              <>
-                <p className="mt-1 text-sm text-muted">
-                  Активные задачи назначены на других. Возможно, вы выбрали не того себя ↓
-                </p>
-                <div className="mx-auto mt-4 flex max-w-md flex-wrap justify-center gap-2">
-                  {activeByAssignee.map(([name, count]) => (
-                    <button
-                      key={name}
-                      onClick={() => name !== "Без исполнителя" && setMe(name)}
-                      disabled={name === "Без исполнителя"}
-                      className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm transition enabled:hover:border-brand enabled:hover:text-brand disabled:opacity-60"
-                      title={name === "Без исполнителя" ? "" : `Стать «${name}»`}
-                    >
-                      {name !== "Без исполнителя" && <Avatar name={name} size={20} />}
-                      {name} · {count}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-muted">
-                  Нажмите на имя, чтобы переключиться на него, или назначьте задачу на «{me}» в карточке.
-                </p>
-              </>
-            ) : (
-              <p className="mt-1 text-sm text-muted">Активных задач пока нет ни у кого 🎉</p>
-            )}
           </div>
         ) : (
           <div className="mt-6 space-y-6">

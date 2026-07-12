@@ -35,12 +35,13 @@ interface SidebarProps {
 export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
   const { boards } = useStore();
   const { user, signOut } = useAuth();
-  const { can, role, isAdmin } = useAccess();
+  const { can, role, isAdmin, me } = useAccess();
   const pathname = usePathname();
   const [createOpen, setCreateOpen] = useState(false);
 
   const email = user?.email ?? "";
-  const avatarBg = avatarColor(email || "user");
+  const displayName = me?.name?.trim() || email;
+  const avatarBg = avatarColor(displayName || email || "user");
   const roleMeta = ROLE_META[role];
   const canSeeBoards = can("board.view");
   const canManageBoards = can("board.manage");
@@ -172,28 +173,46 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
         </div>
       </div>
 
-      {/* Footer */}
+      {/* Footer — карточка профиля (клик → /profile) + выход */}
       <div className="space-y-2 border-t border-border p-3">
-        <div className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition hover:bg-surface-2">
-          <span
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold"
-            style={{ backgroundColor: avatarBg, color: contrastText(avatarBg) }}
+        <div className="flex items-center gap-1">
+          <Link
+            href="/profile"
+            onClick={onNavigate}
+            title="Открыть профиль"
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 py-1.5 transition hover:bg-surface-2",
+              pathname === "/profile" && "bg-surface-2",
+            )}
           >
-            {initials(email || "U")}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-muted" title={email}>
-              {email || "Пользователь"}
+            {me?.avatar ? (
+              <img
+                src={me.avatar}
+                alt={displayName}
+                className="h-8 w-8 shrink-0 rounded-full object-cover"
+              />
+            ) : (
+              <span
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold"
+                style={{ backgroundColor: avatarBg, color: contrastText(avatarBg) }}
+              >
+                {initials(displayName || "U")}
+              </span>
+            )}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-fg" title={displayName}>
+                {displayName || "Профиль"}
+              </span>
+              <span
+                className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold"
+                style={{ color: roleMeta.color }}
+              >
+                {role === "owner" && <Crown className="h-2.5 w-2.5" />}
+                {role === "admin" && <ShieldCheck className="h-2.5 w-2.5" />}
+                {roleMeta.label}
+              </span>
             </span>
-            <span
-              className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold"
-              style={{ color: roleMeta.color }}
-            >
-              {role === "owner" && <Crown className="h-2.5 w-2.5" />}
-              {role === "admin" && <ShieldCheck className="h-2.5 w-2.5" />}
-              {roleMeta.label}
-            </span>
-          </span>
+          </Link>
           <button
             onClick={() => signOut()}
             className="rounded-md p-1.5 text-muted transition hover:bg-surface-2 hover:text-red-500"

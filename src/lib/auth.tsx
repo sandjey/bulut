@@ -33,6 +33,10 @@ interface AuthContextValue {
     ticket: string,
   ) => Promise<AuthResult>;
   signOut: () => Promise<void>;
+  /** Сменить пароль текущего пользователя. */
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  /** Сменить почту: Supabase отправит письмо-подтверждение на новый адрес. */
+  updateEmail: (newEmail: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -143,6 +147,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
   }, []);
 
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: "Supabase не настроен" };
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return { error: error ? translateError(error.message) : null };
+  }, []);
+
+  const updateEmail = useCallback(async (newEmail: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: "Supabase не настроен" };
+    const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+    return { error: error ? translateError(error.message) : null };
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -154,6 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         sendSignupOtp,
         completeSignup,
         signOut,
+        updatePassword,
+        updateEmail,
       }}
     >
       {children}

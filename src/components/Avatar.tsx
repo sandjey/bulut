@@ -2,7 +2,27 @@
 
 import { avatarColor, initials, contrastText } from "@/lib/utils";
 
-export function Avatar({ name, size = 24 }: { name: string; size?: number }) {
+export function Avatar({
+  name,
+  size = 24,
+  src,
+}: {
+  name: string;
+  size?: number;
+  src?: string | null;
+}) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name}
+        title={name}
+        className="rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   if (!name) {
     return (
       <span

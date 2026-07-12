@@ -33,9 +33,15 @@ export function AssigneePicker({
   }, []);
 
   const q = query.trim().toLowerCase();
+  // не предлагаем удалённые аккаунты для новых назначений (но текущее значение оставляем)
   const filtered = useMemo(
-    () => team.filter((m) => m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)),
-    [team, q]
+    () =>
+      team.filter(
+        (m) =>
+          (!m.deleted || m.name === value) &&
+          (m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)),
+      ),
+    [team, q, value]
   );
   const exactExists = team.some((m) => m.name.toLowerCase() === q);
   const canCreate = query.trim().length > 0 && !exactExists;

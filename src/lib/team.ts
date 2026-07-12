@@ -14,6 +14,8 @@ export interface TeamPerson {
   color: string;
   isAccount: boolean; // всегда true — оставлено для совместимости
   accountRole: AppRole; // роль аккаунта (owner/admin/member)
+  avatar: string | null; // фото профиля
+  deleted: boolean; // профиль удалён (аккаунт деактивирован)
 }
 
 /** Список команды строго из profiles. Удалил профиль → человек исчез везде. */
@@ -32,8 +34,13 @@ export function useTeam(): TeamPerson[] {
           color: avatarColor(p.email || name),
           isAccount: true,
           accountRole: p.role,
+          avatar: p.avatar ?? null,
+          deleted: !!p.deletedAt,
         } as TeamPerson;
       })
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+      // сначала активные, потом удалённые; внутри — по имени
+      .sort((a, b) =>
+        a.deleted !== b.deleted ? (a.deleted ? 1 : -1) : a.name.localeCompare(b.name, "ru"),
+      );
   }, [profiles]);
 }

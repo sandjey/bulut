@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./auth";
 import { getSupabase } from "./supabase";
+import { setMe } from "./me";
 import * as db from "./db";
 import {
   AppRole,
@@ -46,6 +47,13 @@ interface AccessContextValue {
   deleteAccount: (id: string) => Promise<string | null>;
   /** Список аккаунтов Auth без профиля (осиротевшие). */
   fetchOrphans: () => Promise<{ configured: boolean; orphans: OrphanAccount[] }>;
+  // ── свой профиль ──
+  /** Обновить СВОЙ профиль (имя/должность/фото). */
+  updateMyProfile: (patch: { name?: string; jobRole?: string; avatar?: string | null }) => Promise<string | null>;
+  /** Мягко удалить свой профиль (контент остаётся, аккаунт деактивируется). */
+  deleteMyProfile: () => Promise<string | null>;
+  /** Имена профилей, помеченных удалёнными — для метки «удалённый аккаунт». */
+  deletedNames: Set<string>;
 }
 
 const AccessContext = createContext<AccessContextValue | null>(null);
@@ -118,7 +126,24 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId]);
 
-  const me = useMemo(() => profiles.find((p) => p.id === userId) ?? null, [profiles, userId]);
+  // Свой профиль. Удалённый (deleted_at) не считается активным.
+  const me = useMemo(
+    () => profiles.find((p) => p.id === userId && !p.deletedAt) ?? null,
+    [profiles, userId],
+  );
+
+  // Личность = аккаунт: подставляем «я» из профиля автоматически (без ручного выбора).
+  const emailAddr = user?.email ?? "";
+  useEffect(() => {
+    if (me) setMe(me.name?.trim() || emailAddr);
+  }, [me, emailAddr]);
+
+  // Имена удалённых аккаунтов — для метки «удалённый аккаунт» рядом с именем.
+  const deletedNames = useMemo(
+    () => new Set(profiles.filter((p) => p.deletedAt && p.name).map((p) => p.name)),
+    [profiles],
+  );
+
   const role: AppRole = me?.role ?? "member";
   const isOwner = role === "owner";
   const isAdmin = role === "owner" || role === "admin";
@@ -288,6 +313,49 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     [profiles, removeUser],
   );
 
+  // Обновить свой профиль (имя/должность/фото). RLS разрешает self-update.
+  const updateMyProfile = useCallback(
+    async (patch: { name?: string; jobRole?: string; avatar?: string | null }): Promise<string | null> => {
+      if (!userId) return "Нет активной сессии";
+      try {
+        await db.updateProfileFields(userId, patch);
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === userId
+              ? {
+                  ...p,
+                  ...(patch.name !== undefined ? { name: patch.name } : {}),
+                  ...(patch.jobRole !== undefined ? { jobRole: patch.jobRole } : {}),
+                  ...(patch.avatar !== undefined ? { avatar: patch.avatar } : {}),
+                }
+              : p,
+          ),
+        );
+        return null;
+      } catch (e) {
+        console.error(e);
+        return "Не удалось сохранить профиль";
+      }
+    },
+    [userId],
+  );
+
+  // Мягкое удаление своего профиля. Контент (доски/задачи/журнал/карты) не трогаем.
+  const deleteMyProfile = useCallback(async (): Promise<string | null> => {
+    if (!userId || !me) return "Нет активной сессии";
+    if (me.role === "owner") return "Владельца проекта удалить нельзя";
+    try {
+      await db.softDeleteProfile(userId);
+      setProfiles((prev) =>
+        prev.map((p) => (p.id === userId ? { ...p, deletedAt: new Date().toISOString() } : p)),
+      );
+      return null;
+    } catch (e) {
+      console.error(e);
+      return "Не удалось удалить профиль";
+    }
+  }, [userId, me]);
+
   const fetchOrphans = useCallback(async (): Promise<{
     configured: boolean;
     orphans: OrphanAccount[];
@@ -326,6 +394,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       removeUser,
       deleteAccount,
       fetchOrphans,
+      updateMyProfile,
+      deleteMyProfile,
+      deletedNames,
     }),
     [
       loading,
@@ -345,6 +416,9 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       removeUser,
       deleteAccount,
       fetchOrphans,
+      updateMyProfile,
+      deleteMyProfile,
+      deletedNames,
     ],
   );
 
