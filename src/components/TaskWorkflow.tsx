@@ -20,9 +20,13 @@ import { useCan } from "@/lib/access";
 import { Board } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { AssigneePicker } from "./AssigneePicker";
+import { MentionInput } from "./MentionInput";
 import { fmtDateTime, durationSince, formatDuration } from "@/lib/date";
 import { stageTimeList } from "@/lib/stages";
 import { cn } from "@/lib/utils";
+import { getMe } from "@/lib/me";
+import { Markdown } from "@/lib/markdown";
+import { useNotifier, useMentionExtractor } from "@/lib/notify";
 
 export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }) {
   const { tasks, comments, sendToReview, acceptTask, returnTask, toggleDone, addComment, deleteComment, moveTask } =
@@ -30,13 +34,14 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
   const can = useCan();
   const canStatus = can("card.status");
   const canComment = can("card.comment");
+  const notify = useNotifier();
+  const extractMentions = useMentionExtractor();
   const task = tasks.find((t) => t.id === taskId);
 
   const [returning, setReturning] = useState(false);
   const [returnReason, setReturnReason] = useState("");
   const [returnAuthor, setReturnAuthor] = useState("");
   const [commentText, setCommentText] = useState("");
-  const [commentAuthor, setCommentAuthor] = useState("");
 
   const taskComments = useMemo(
     () =>
@@ -58,9 +63,25 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
   };
 
   const doComment = () => {
-    if (!commentText.trim()) return;
-    addComment(task.id, commentAuthor, commentText);
+    const text = commentText.trim();
+    if (!text) return;
+    const author = getMe() || "";
+    addComment(task.id, author, text);
     setCommentText("");
+
+    // Уведомления: упомянутые (+письмо), исполнитель и автор задачи (в приложении)
+    const link = `/board/${board.id}?task=${task.id}`;
+    const mentioned = new Set(extractMentions(text));
+    mentioned.forEach((name) => {
+      if (name !== author) notify(name, { type: "mention", title: "Вас упомянули в задаче", body: `${task.title}: ${text}`, link, email: true });
+    });
+    const notifyComment = (name?: string | null) => {
+      if (name && name !== author && !mentioned.has(name)) {
+        notify(name, { type: "comment", title: "Новый комментарий", body: `${author}: ${text}`, link });
+      }
+    };
+    notifyComment(task.assignee);
+    notifyComment(task.createdBy);
   };
 
   const startReview = () => moveTask(task.id, reviewColumnId(board), 0);
@@ -263,15 +284,11 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
         {/* composer */}
         {canComment && (
         <div className="mb-3 flex gap-2">
-          <div className="w-44 shrink-0">
-            <AssigneePicker value={commentAuthor} onChange={setCommentAuthor} placeholder="Кто" />
-          </div>
-          <input
-            className="input flex-1"
+          <MentionInput
             value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doComment()}
-            placeholder="Комментарий… (@имя — упомянуть)"
+            onChange={setCommentText}
+            onSubmit={doComment}
+            placeholder="Комментарий… (@ — упомянуть, **жирный**, - список)"
           />
           <button className="btn-primary px-3" onClick={doComment} disabled={!commentText.trim()}>
             <Plus className="h-4 w-4" />
@@ -313,25 +330,13 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
                     </button>
                   )}
                 </div>
-                <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed">{renderMentions(c.text)}</p>
+                <Markdown text={c.text} className="mt-0.5 break-words text-sm leading-relaxed" />
               </div>
             </div>
           ))}
         </div>
       </div>
     </div>
-  );
-}
-
-function renderMentions(text: string) {
-  return text.split(/(@[^\s,@]+)/g).map((part, i) =>
-    part.startsWith("@") ? (
-      <span key={i} className="rounded bg-brand/10 px-1 font-medium text-brand">
-        {part}
-      </span>
-    ) : (
-      <span key={i}>{part}</span>
-    )
   );
 }
 

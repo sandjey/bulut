@@ -25,6 +25,8 @@ import { AutoTextarea } from "./AutoTextarea";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { useMaps } from "@/lib/maps";
+import { getMe } from "@/lib/me";
+import { useNotifier } from "@/lib/notify";
 import {
   Board,
   Priority,
@@ -108,6 +110,7 @@ interface TaskModalProps {
 
 export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskModalProps) {
   const { tasks, createTask, updateTask, deleteTask } = useStore();
+  const notify = useNotifier();
   const can = useCan();
   const editing = !!task;
   const canEdit = can("card.edit");
@@ -212,11 +215,24 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
 
   const save = () => {
     if (!title.trim()) return;
+    const who = assignee.trim();
+    const notifyAssign = (taskId: string) => {
+      // уведомляем при назначении на кого-то (кроме себя), при создании или смене исполнителя
+      if (who && who !== getMe() && (!editing || who !== task?.assignee)) {
+        notify(who, {
+          type: "assign",
+          title: "Вам назначили задачу",
+          body: title.trim(),
+          link: `/board/${board.id}?task=${taskId}`,
+          email: true,
+        });
+      }
+    };
     if (editing && task) {
       updateTask(task.id, {
         title: title.trim(),
         desc,
-        assignee: assignee.trim(),
+        assignee: who,
         priority,
         type,
         dueDate: dueDate || null,
@@ -226,13 +242,14 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         mapId: mapId || null,
         mapNodeId: mapId ? effectiveNodeId || null : null,
       });
+      notifyAssign(task.id);
     } else {
-      createTask({
+      const created = createTask({
         boardId: board.id,
         columnId: columnId || board.columns[0].id,
         title,
         desc,
-        assignee: assignee.trim(),
+        assignee: who,
         priority,
         type,
         dueDate: dueDate || null,
@@ -241,6 +258,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         mapId: mapId || null,
         mapNodeId: mapId ? effectiveNodeId || null : null,
       });
+      notifyAssign(created.id);
     }
     onClose();
   };

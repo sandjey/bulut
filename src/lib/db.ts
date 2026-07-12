@@ -979,6 +979,26 @@ export async function fetchNotifications(userId: string): Promise<AppNotificatio
   return (data as Parameters<typeof toNotif>[0][]).map(toNotif);
 }
 
+/** Уведомить участника комнаты (через RPC — RLS сам по себе не даёт писать другим). */
+export async function notifyMember(
+  userId: string,
+  workspaceId: string,
+  type: string,
+  title: string,
+  body: string,
+  link: string | null,
+) {
+  const { error } = await client().rpc("notify_member", {
+    p_user: userId,
+    p_ws: workspaceId,
+    p_type: type,
+    p_title: title,
+    p_body: body,
+    p_link: link,
+  });
+  if (error) throw error;
+}
+
 export async function markNotificationRead(id: string) {
   const { error } = await client().from("notifications").update({ read: true }).eq("id", id);
   if (error) throw error;

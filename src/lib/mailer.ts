@@ -106,6 +106,37 @@ function inviteEmailHtml(workspace: string, url: string): string {
 </body></html>`;
 }
 
+export async function sendNotifyEmail(
+  email: string,
+  title: string,
+  body: string,
+  url: string | null,
+): Promise<void> {
+  const { transport, from } = await getTransport();
+  const button = url
+    ? `<tr><td style="padding:20px 36px"><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:12px">Открыть в Bulut</a></td></tr>`
+    : "";
+  const html = `<!doctype html>
+<html><body style="margin:0;background:#0b0f1a;padding:32px 16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%"><tr><td align="center">
+    <table role="presentation" width="460" style="max-width:460px;width:100%;background:#141a2b;border:1px solid #243049;border-radius:20px;overflow:hidden">
+      <tr><td style="padding:32px 36px 8px"><div style="font-size:20px;font-weight:800;color:#fff">Bulut</div></td></tr>
+      <tr><td style="padding:6px 36px 4px"><div style="color:#fff;font-size:16px;font-weight:700">${escapeHtml(title)}</div></td></tr>
+      <tr><td style="padding:4px 36px"><p style="color:#c7d0e6;font-size:14px;line-height:1.6;margin:0">${escapeHtml(body)}</p></td></tr>
+      ${button}
+      <tr><td style="padding:8px 36px 30px"><p style="color:#5a6684;font-size:12px;margin:0">Это автоматическое уведомление Bulut.</p></td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+  await transport.sendMail({
+    from,
+    to: email,
+    subject: `Bulut · ${title}`,
+    text: `${title}\n\n${body}${url ? `\n\n${url}` : ""}`,
+    html,
+  });
+}
+
 export async function sendInviteEmail(email: string, workspace: string, url: string): Promise<void> {
   const { transport, from } = await getTransport();
   await transport.sendMail({
