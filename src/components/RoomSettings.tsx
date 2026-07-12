@@ -7,6 +7,7 @@ import { useWorkspace } from "@/lib/workspace";
 import { useAuth } from "@/lib/auth";
 import { Avatar } from "@/components/Avatar";
 import { RoleBadge } from "@/components/RoleBadge";
+import { EditableName } from "@/components/EditableName";
 import { ROLE_META, type AppRole } from "@/lib/permissions";
 import { BOARD_COLORS } from "@/lib/types";
 import { contrastText } from "@/lib/utils";
@@ -29,16 +30,12 @@ export function RoomSettings() {
   } = ws;
 
   const canManage = myRole === "owner" || myRole === "admin";
-  const [name, setName] = useState(active?.name ?? "");
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     refreshRoom();
   }, [refreshRoom]);
-  useEffect(() => {
-    setName(active?.name ?? "");
-  }, [active?.name]);
 
   if (!active) {
     return (
@@ -68,17 +65,13 @@ export function RoomSettings() {
             {active.name.slice(0, 1).toUpperCase()}
           </span>
           <div className="min-w-0 flex-1">
-            {canManage ? (
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => name.trim() && name !== active.name && updateWorkspace(active.id, { name: name.trim() })}
-                className="w-full rounded-lg border border-transparent bg-transparent px-1 text-xl font-bold outline-none transition hover:border-border focus:border-brand focus:bg-surface"
-              />
-            ) : (
-              <h1 className="text-xl font-bold">{active.name}</h1>
-            )}
-            <p className="px-1 text-sm text-muted">
+            <EditableName
+              value={active.name}
+              canEdit={canManage}
+              onSave={(v) => updateWorkspace(active.id, { name: v })}
+              className="text-xl font-bold"
+            />
+            <p className="text-sm text-muted">
               {members.length} участников · вы — {ROLE_META[myRole].label.toLowerCase()}
             </p>
           </div>

@@ -13,6 +13,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
+import { EditableName } from "@/components/EditableName";
 import { ROLE_META, type AppRole } from "@/lib/permissions";
 import { findProfileByEmail } from "@/lib/db";
 import { cn, contrastText } from "@/lib/utils";
@@ -30,7 +31,6 @@ export function RoomInvitePanel() {
   } = useWorkspace();
 
   const canManage = myRole === "owner" || myRole === "admin";
-  const [name, setName] = useState(active?.name ?? "");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AppRole>("member");
   const [busy, setBusy] = useState(false);
@@ -41,9 +41,6 @@ export function RoomInvitePanel() {
   useEffect(() => {
     refreshRoom();
   }, [refreshRoom]);
-  useEffect(() => {
-    setName(active?.name ?? "");
-  }, [active?.name]);
 
   if (!active) return null;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -93,16 +90,12 @@ export function RoomInvitePanel() {
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Комната</p>
-          {canManage ? (
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => name.trim() && name !== active.name && updateWorkspace(active.id, { name: name.trim() })}
-              className="w-full rounded-lg border border-transparent bg-transparent px-1 text-lg font-bold outline-none transition hover:border-border focus:border-brand focus:bg-surface"
-            />
-          ) : (
-            <h2 className="px-1 text-lg font-bold">{active.name}</h2>
-          )}
+          <EditableName
+            value={active.name}
+            canEdit={canManage}
+            onSave={(v) => updateWorkspace(active.id, { name: v })}
+            className="text-lg font-bold"
+          />
         </div>
         <Link
           href="/admin/room"
