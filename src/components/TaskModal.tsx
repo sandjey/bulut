@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Trash2, UserPlus, Waypoints, ExternalLink, AlertTriangle } from "lucide-react";
+import {
+  Trash2,
+  UserPlus,
+  Waypoints,
+  ExternalLink,
+  AlertTriangle,
+  ChevronDown,
+  CalendarDays,
+  Tag,
+  ListChecks,
+  Image as ImageIcon,
+  Activity,
+} from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
 import { AssigneePicker } from "./AssigneePicker";
@@ -50,6 +62,38 @@ function stagesUnder(screenId: string, nodes: MapNode[], edges: MapEdge[]): MapN
     for (const t of adj.get(id) ?? []) queue.push(t);
   }
   return stages;
+}
+
+/** Складная секция — прогрессивное раскрытие, чтобы форма не давила объёмом. */
+function Section({
+  title,
+  icon: Icon,
+  hint,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  icon: typeof Tag;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface-2/25">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-surface-2/50"
+      >
+        <Icon className="h-4 w-4 shrink-0 text-muted" />
+        <span>{title}</span>
+        {hint && <span className="text-xs font-normal text-faint">{hint}</span>}
+        <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 text-muted transition-transform", open && "rotate-180")} />
+      </button>
+      {open && <div className="border-t border-border p-3">{children}</div>}
+    </div>
+  );
 }
 
 interface TaskModalProps {
@@ -242,40 +286,37 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
     >
       <fieldset disabled={fieldsDisabled} className="space-y-4 border-0 p-0 disabled:opacity-90">
         {editing && task?.createdBy && (
-          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-surface-2/60 px-3 py-1.5 text-xs text-muted">
             <UserPlus className="h-3.5 w-3.5 text-brand" />
             Создал <span className="font-semibold text-fg">{task.createdBy}</span>
             <span className="text-faint">· {fmtDateTime(task.createdAt)}</span>
           </div>
         )}
 
+        {/* ── Главное: название + описание ── */}
         <div>
-          <label className="label">Название</label>
           <input
             autoFocus
-            className="input"
+            className="input !text-base font-semibold"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Что нужно сделать?"
+            placeholder="Название задачи — что нужно сделать?"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
             }}
           />
-        </div>
-
-        <div>
-          <label className="label">Описание</label>
           <AutoTextarea
-            className="input"
+            className="input mt-2"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
-            placeholder="Детали задачи..."
+            placeholder="Описание, детали, критерии готовности…"
           />
         </div>
 
+        {/* ── Тип (компактные чипы) ── */}
         <div>
           <label className="label">Тип</label>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {TASK_TYPE_KEYS.map((k) => {
               const meta = TASK_TYPES[k];
               const active = type === k;
@@ -284,7 +325,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
                   key={k}
                   type="button"
                   onClick={() => setType(k)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition"
+                  className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[13px] font-medium transition"
                   style={{
                     borderColor: active ? meta.color : "rgb(var(--border))",
                     backgroundColor: active ? withAlpha(meta.color, 0.14) : "transparent",
@@ -299,7 +340,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* ── Свойства: исполнитель / колонка / приоритет ── */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Исполнитель</label>
             <AssigneePicker value={assignee} onChange={setAssignee} />
@@ -307,11 +349,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
 
           <div>
             <label className="label">Колонка</label>
-            <select
-              className="input"
-              value={columnId}
-              onChange={(e) => setColumnId(e.target.value)}
-            >
+            <select className="input" value={columnId} onChange={(e) => setColumnId(e.target.value)}>
               {board.columns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -320,7 +358,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
             </select>
           </div>
 
-          <div>
+          <div className="sm:col-span-2">
             <label className="label">Приоритет</label>
             <div className="grid grid-cols-3 gap-1.5">
               {(Object.keys(PRIORITY_META) as Priority[]).map((p) => (
@@ -338,47 +376,56 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
                       : undefined
                   }
                 >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: PRIORITY_META[p].dot }}
-                  />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: PRIORITY_META[p].dot }} />
                   {PRIORITY_META[p].label}
                 </button>
               ))}
             </div>
           </div>
-
-          <div>
-            <label className="label">Дедлайн · Готов к тестированию</label>
-            <input
-              type="date"
-              className="input"
-              value={dueDate}
-              max={doneDueDate || undefined}
-              onChange={(e) => setDueDate(e.target.value)}
-              title="Срок разработчика — сдать в тест"
-            />
-          </div>
-
-          <div>
-            <label className="label">Дедлайн · Готово</label>
-            <input
-              type="date"
-              className="input"
-              value={doneDueDate}
-              min={dueDate || undefined}
-              onChange={(e) => setDoneDueDate(e.target.value)}
-              title="Срок тестировщика — завершить задачу"
-            />
-          </div>
         </div>
 
-        {/* Bulut MAP: привязка задачи к экрану карты */}
-        {maps.length > 0 && (
-          <div className="rounded-xl border border-teal-500/25 bg-teal-500/[0.05] p-3">
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-400">
-              <Waypoints className="h-3.5 w-3.5" /> Экран на карте (необязательно)
+        {/* ── Складные секции (открываются по клику или сами, если есть данные) ── */}
+        <Section
+          key={`due-${task?.id ?? "new"}`}
+          title="Сроки"
+          icon={CalendarDays}
+          hint="дедлайны, необязательно"
+          defaultOpen={!!(dueDate || doneDueDate)}
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label">Готов к тестированию</label>
+              <input
+                type="date"
+                className="input"
+                value={dueDate}
+                max={doneDueDate || undefined}
+                onChange={(e) => setDueDate(e.target.value)}
+                title="Срок разработчика — сдать в тест"
+              />
             </div>
+            <div>
+              <label className="label">Готово</label>
+              <input
+                type="date"
+                className="input"
+                value={doneDueDate}
+                min={dueDate || undefined}
+                onChange={(e) => setDoneDueDate(e.target.value)}
+                title="Срок тестировщика — завершить задачу"
+              />
+            </div>
+          </div>
+        </Section>
+
+        {maps.length > 0 && (
+          <Section
+            key={`map-${task?.id ?? "new"}`}
+            title="Экран на карте"
+            icon={Waypoints}
+            hint="Bulut MAP, необязательно"
+            defaultOpen={!!mapId}
+          >
             <div className={cn("grid grid-cols-1 gap-2", useScreenStage ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
               <select
                 className="input"
@@ -475,30 +522,53 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
                 </Link>
               )
             )}
-          </div>
+          </Section>
         )}
 
-        <div>
-          <label className="label">Теги</label>
+        <Section
+          key={`tags-${task?.id ?? "new"}`}
+          title="Теги"
+          icon={Tag}
+          hint={tags.length ? `${tags.length}` : "необязательно"}
+          defaultOpen={tags.length > 0}
+        >
           <TagInput tags={tags} onChange={setTags} suggestions={allTags} />
-        </div>
+        </Section>
       </fieldset>
 
-      {editing && task && canEdit && (
-        <div className="mt-4 border-t border-border pt-4">
-          <PhotoUploader taskId={task.id} />
-        </div>
-      )}
-
-      {editing && task && canEdit && (
-        <div className="mt-4 border-t border-border pt-4">
-          <TaskExtras taskId={task.id} />
-        </div>
-      )}
-
       {editing && task && (
-        <div className="mt-4 border-t border-border pt-4">
-          <TaskWorkflow taskId={task.id} board={board} />
+        <div className="mt-4 space-y-3">
+          {canEdit && (
+            <Section
+              key={`photos-${task.id}`}
+              title="Фото"
+              icon={ImageIcon}
+              hint={task.photos?.length ? `${task.photos.length}` : undefined}
+              defaultOpen={(task.photos?.length ?? 0) > 0}
+            >
+              <PhotoUploader taskId={task.id} />
+            </Section>
+          )}
+
+          {canEdit && (
+            <Section
+              key={`extras-${task.id}`}
+              title="Чек-лист и вложения"
+              icon={ListChecks}
+              hint={
+                (task.checklist?.length ?? 0) + (task.attachments?.length ?? 0)
+                  ? `${(task.checklist?.length ?? 0) + (task.attachments?.length ?? 0)}`
+                  : undefined
+              }
+              defaultOpen={(task.checklist?.length ?? 0) + (task.attachments?.length ?? 0) > 0}
+            >
+              <TaskExtras taskId={task.id} />
+            </Section>
+          )}
+
+          <Section key={`wf-${task.id}`} title="Статус, время и комментарии" icon={Activity} defaultOpen>
+            <TaskWorkflow taskId={task.id} board={board} />
+          </Section>
         </div>
       )}
     </Modal>

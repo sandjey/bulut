@@ -18,6 +18,92 @@ import { useCan } from "@/lib/access";
 import { PageHeader } from "@/components/PageHeader";
 import { fmtDateTime } from "@/lib/date";
 import { withAlpha, cn } from "@/lib/utils";
+import type { MapGraph } from "@/lib/map-types";
+
+/** Мини-превью графа карты: узлы блоками, связи линиями. Пустая карта — аккуратный плейсхолдер. */
+function MapThumbnail({ graph, color }: { graph?: MapGraph; color: string }) {
+  const nodes = graph?.nodes ?? [];
+  const edges = graph?.edges ?? [];
+
+  if (nodes.length === 0) {
+    return (
+      <div className="relative flex h-full items-center justify-center">
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage: `radial-gradient(${withAlpha(color, 0.5)} 1px, transparent 1px)`,
+            backgroundSize: "15px 15px",
+          }}
+        />
+        <span
+          className="relative inline-flex items-center gap-1.5 rounded-full border border-dashed bg-surface/70 px-2.5 py-1 text-[11px] font-medium text-muted backdrop-blur-sm"
+          style={{ borderColor: withAlpha(color, 0.45) }}
+        >
+          <Waypoints className="h-3.5 w-3.5" style={{ color }} /> Пустая карта
+        </span>
+      </div>
+    );
+  }
+
+  const rects = nodes.map((n) => {
+    const w = typeof n.style?.width === "number" ? n.style.width : 170;
+    const h = typeof n.style?.height === "number" ? n.style.height : 62;
+    const x = n.position?.x ?? 0;
+    const y = n.position?.y ?? 0;
+    return {
+      id: n.id,
+      x,
+      y,
+      w,
+      h,
+      cx: x + w / 2,
+      cy: y + h / 2,
+      color: (n.data?.color as string) || color,
+    };
+  });
+  const minX = Math.min(...rects.map((r) => r.x));
+  const minY = Math.min(...rects.map((r) => r.y));
+  const maxX = Math.max(...rects.map((r) => r.x + r.w));
+  const maxY = Math.max(...rects.map((r) => r.y + r.h));
+  const pad = 60;
+  const vb = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
+  const byId = new Map(rects.map((r) => [r.id, r]));
+
+  return (
+    <svg viewBox={vb} preserveAspectRatio="xMidYMid meet" className="h-full w-full">
+      {edges.map((e, i) => {
+        const s = byId.get(e.source);
+        const t = byId.get(e.target);
+        if (!s || !t) return null;
+        return (
+          <line
+            key={i}
+            x1={s.cx}
+            y1={s.cy}
+            x2={t.cx}
+            y2={t.cy}
+            stroke={withAlpha(color, 0.4)}
+            strokeWidth={3}
+            strokeLinecap="round"
+          />
+        );
+      })}
+      {rects.map((r) => (
+        <rect
+          key={r.id}
+          x={r.x}
+          y={r.y}
+          width={r.w}
+          height={r.h}
+          rx={16}
+          fill={withAlpha(r.color, 0.9)}
+          stroke={r.color}
+          strokeWidth={2}
+        />
+      ))}
+    </svg>
+  );
+}
 
 export default function MapsPage() {
   const { maps, ready, createMap, deleteMap } = useMaps();
@@ -76,27 +162,17 @@ export default function MapsPage() {
                     href={`/maps/${m.id}`}
                     className="hover-lift block overflow-hidden rounded-2xl border border-border bg-surface shadow-soft transition"
                   >
-                    {/* preview strip */}
+                    {/* превью графа карты */}
                     <div
-                      className="relative h-24 overflow-hidden"
+                      className="relative h-28 overflow-hidden border-b border-border"
                       style={{
-                        background: `linear-gradient(135deg, ${withAlpha(m.color, 0.22)}, ${withAlpha(
+                        background: `linear-gradient(135deg, ${withAlpha(m.color, 0.14)}, ${withAlpha(
                           m.color,
-                          0.05,
+                          0.03,
                         )})`,
                       }}
                     >
-                      <div
-                        className="absolute inset-0 opacity-[0.5]"
-                        style={{
-                          backgroundImage: `radial-gradient(${withAlpha(m.color, 0.5)} 1px, transparent 1px)`,
-                          backgroundSize: "16px 16px",
-                        }}
-                      />
-                      <Waypoints
-                        className="absolute right-3 top-3 h-6 w-6"
-                        style={{ color: m.color }}
-                      />
+                      <MapThumbnail graph={m.graph} color={m.color} />
                     </div>
                     <div className="p-4">
                       <h3 className="truncate font-semibold">{m.name}</h3>

@@ -135,8 +135,9 @@ export async function exportPng(nodes: MapNode[], name: string) {
   const vp = getViewportForBounds(bounds, width, height, 0.3, 2, 0.12);
   const el = document.querySelector(".react-flow__viewport") as HTMLElement | null;
   if (!el) return;
+  const dark = document.documentElement.classList.contains("dark");
   const dataUrl = await toPng(el, {
-    backgroundColor: "#09090c",
+    backgroundColor: dark ? "#09090c" : "#f0f0f6",
     width,
     height,
     style: {
