@@ -878,6 +878,21 @@ export async function leaveWorkspaceDb(workspaceId: string, userId: string) {
   if (error) throw error;
 }
 
+/** Найти зарегистрированный профиль по email (для проверки перед приглашением). */
+export async function findProfileByEmail(
+  email: string,
+): Promise<{ id: string; name: string; email: string } | null> {
+  const { data, error } = await client()
+    .from("profiles")
+    .select("id, name, email, deleted_at")
+    .ilike("email", email.trim())
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  const p = data[0] as { id: string; name: string; email: string; deleted_at: string | null };
+  if (p.deleted_at) return null;
+  return { id: p.id, name: p.name, email: p.email };
+}
+
 /** Пригласить в комнату (RPC): создаёт invite + уведомление. Возвращает токен. */
 export async function inviteToWorkspaceRpc(
   workspaceId: string,

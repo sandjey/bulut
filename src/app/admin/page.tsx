@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
+  Boxes,
   ShieldCheck,
   ShieldOff,
   Trash2,
@@ -126,6 +128,13 @@ export default function AdminPage() {
               <p className="text-xs text-muted">Права доступа пользователей</p>
             </div>
           </div>
+          <Link
+            href="/admin/room"
+            className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2 text-sm font-medium transition hover:bg-surface-2"
+          >
+            <Boxes className="h-4 w-4 text-brand" /> Настройки комнаты
+            <ChevronRight className="ml-auto h-4 w-4 text-muted" />
+          </Link>
           <div className="relative mt-3">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <input

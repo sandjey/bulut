@@ -118,7 +118,7 @@ export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               </button>
             )}
             <Link
-              href="/room"
+              href="/admin/room"
               onClick={() => {
                 setOpen(false);
                 onNavigate?.();
@@ -126,7 +126,7 @@ export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
               className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-muted transition hover:bg-surface-2"
               style={{ ["--x" as string]: withAlpha(active?.color ?? "#6366f1", 0.1) }}
             >
-              <Settings className="h-4 w-4" /> Участники и приглашения
+              <Settings className="h-4 w-4" /> Настройки комнаты
             </Link>
           </div>
         </div>

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_META, type AppRole } from "@/lib/permissions";
+import { findProfileByEmail } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
 /** Панель комнаты: название (редактируемое) + приглашение участников + ожидающие. */
@@ -49,15 +50,27 @@ export function RoomInvitePanel() {
   const pending = invitations.filter((i) => i.status === "pending");
 
   const invite = async () => {
-    if (!email.trim()) return;
+    const em = email.trim();
+    if (!em) return;
     setBusy(true);
     setMsg(null);
-    const res = await inviteMember(email.trim(), role);
+    setLastLink(null);
+    // Приглашать можно только зарегистрированных пользователей Bulut.
+    const prof = await findProfileByEmail(em);
+    if (!prof) {
+      setBusy(false);
+      setMsg({
+        ok: false,
+        text: `«${em}» не является пользователем Bulut. Пусть сначала зарегистрируется, после этого пригласите его по почте.`,
+      });
+      return;
+    }
+    const res = await inviteMember(em, role);
     setBusy(false);
     if ("error" in res) setMsg({ ok: false, text: res.error });
     else {
       setLastLink(`${origin}/invite/${res.token}`);
-      setMsg({ ok: true, text: `Приглашение отправлено на ${email.trim()}` });
+      setMsg({ ok: true, text: `Приглашение отправлено пользователю ${prof.name || em}` });
       setEmail("");
     }
   };
@@ -92,7 +105,7 @@ export function RoomInvitePanel() {
           )}
         </div>
         <Link
-          href="/room"
+          href="/admin/room"
           className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted transition hover:bg-surface-2 hover:text-fg"
           title="Настройки комнаты"
         >
