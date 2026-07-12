@@ -13,6 +13,8 @@ import {
   Paperclip,
   ImageIcon,
   UserPlus,
+  Lock,
+  ListTree,
 } from "lucide-react";
 import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
@@ -35,7 +37,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: TaskCardProps) {
-  const { toggleDone, updateTask, comments } = useStore();
+  const { toggleDone, updateTask, comments, tasks } = useStore();
   const can = useCan();
   const canEdit = can("card.edit");
   const canStatus = can("card.status");
@@ -51,6 +53,14 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
   const checkDone = checklist.filter((i) => i.done).length;
   const attachCount = (task.attachments ?? []).length;
   const photoCount = (task.photos ?? []).length;
+  const subs = useMemo(() => tasks.filter((t) => t.parentId === task.id && !t.deletedAt), [tasks, task.id]);
+  const subDone = subs.filter((s) => s.status === "done").length;
+  const blocked =
+    (task.blockedBy?.length ?? 0) > 0 &&
+    task.blockedBy.some((id) => {
+      const b = tasks.find((t) => t.id === id);
+      return b && b.status !== "done";
+    });
   // badge reflects the card's ACTUAL column (fixes: badge stuck after moving back)
   const role = columnRole(board, task.columnId);
   const isReady = role === "ready" && task.status !== "done";
@@ -150,6 +160,19 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
 
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             <TypeBadge type={task.type} size="xs" />
+            {blocked && (
+              <span className="chip bg-red-500/12 text-red-600 dark:text-red-400" title="Заблокирована другими задачами">
+                <Lock className="h-3 w-3" /> Блок
+              </span>
+            )}
+            {subs.length > 0 && (
+              <span
+                className={cn("chip bg-surface-2 text-muted", subDone === subs.length && "text-emerald-600 dark:text-emerald-400")}
+                title="Подзадачи"
+              >
+                <ListTree className="h-3 w-3" /> {subDone}/{subs.length}
+              </span>
+            )}
             <DeadlineBadge dueDate={task.dueDate} done={done || !!task.readyAt} label="Тест" />
             <DeadlineBadge dueDate={task.doneDueDate} done={done} label="Готово" />
             {hasReturn && (

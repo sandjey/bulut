@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, Trash2, Pencil, Maximize2 } from "lucide-react";
+import { Plus, Trash2, Pencil, Maximize2, Gauge } from "lucide-react";
 import { Droppable, Draggable } from "@hello-pangea/dnd";
 import { Board, Task } from "@/lib/types";
 import { useStore } from "@/lib/store";
@@ -28,9 +28,21 @@ export function BoardColumn({
   onQuickAdd,
   onOpenTask,
 }: BoardColumnProps) {
-  const { renameColumn, deleteColumn } = useStore();
+  const { renameColumn, deleteColumn, updateBoard } = useStore();
   const can = useCan();
   const canManage = can("board.manage");
+  const wip = board.columns.find((c) => c.id === columnId)?.wip ?? 0;
+  const overWip = wip > 0 && tasks.length > wip;
+  const setWip = () => {
+    const v = prompt("Лимит задач в колонке (пусто — без лимита):", wip ? String(wip) : "");
+    if (v === null) return;
+    const n = parseInt(v, 10);
+    const columns = board.columns.map((c) =>
+      c.id === columnId ? { ...c, wip: Number.isFinite(n) && n > 0 ? n : undefined } : c,
+    );
+    updateBoard(board.id, { columns });
+    setMenuOpen(false);
+  };
   const canCreate = can("card.create");
   const canMove = can("card.move");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -82,8 +94,16 @@ export function BoardColumn({
         ) : (
           <>
             <h3 className="flex-1 truncate text-[13px] font-semibold uppercase tracking-wide text-muted">{columnName}</h3>
-            <span className="grid h-5 min-w-[20px] place-items-center rounded-full border border-border bg-surface px-1.5 text-xs font-semibold text-muted">
-              {tasks.length}
+            <span
+              className={cn(
+                "grid h-5 min-w-[20px] place-items-center rounded-full border px-1.5 text-xs font-semibold",
+                overWip
+                  ? "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"
+                  : "border-border bg-surface text-muted",
+              )}
+              title={wip ? `${tasks.length} из ${wip} (лимит)` : undefined}
+            >
+              {wip ? `${tasks.length}/${wip}` : tasks.length}
             </span>
             {canManage && (
             <div className="relative">
@@ -105,6 +125,12 @@ export function BoardColumn({
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-surface-2"
                     >
                       <Pencil className="h-3.5 w-3.5" /> Переименовать
+                    </button>
+                    <button
+                      onClick={setWip}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-surface-2"
+                    >
+                      <Gauge className="h-3.5 w-3.5" /> Лимит WIP{wip ? `: ${wip}` : ""}
                     </button>
                     <button
                       onClick={() => {

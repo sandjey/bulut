@@ -14,6 +14,7 @@ import {
   ListChecks,
   Image as ImageIcon,
   Activity,
+  GitBranch,
 } from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
@@ -21,6 +22,7 @@ import { AssigneePicker } from "./AssigneePicker";
 import { TaskWorkflow } from "./TaskWorkflow";
 import { TaskExtras } from "./TaskExtras";
 import { PhotoUploader } from "./PhotoUploader";
+import { TaskSubtasks } from "./TaskSubtasks";
 import { AutoTextarea } from "./AutoTextarea";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
@@ -556,6 +558,21 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
 
       {editing && task && (
         <div className="mt-4 space-y-3">
+          {canEdit && (
+            <Section
+              key={`subs-${task.id}`}
+              title="Подзадачи и связи"
+              icon={GitBranch}
+              hint={(() => {
+                const n = tasks.filter((t) => t.parentId === task.id && !t.deletedAt).length;
+                return n ? `${n}` : task.blockedBy.length ? "блокировки" : undefined;
+              })()}
+              defaultOpen={tasks.some((t) => t.parentId === task.id) || task.blockedBy.length > 0}
+            >
+              <TaskSubtasks task={task} board={board} />
+            </Section>
+          )}
+
           {canEdit && (
             <Section
               key={`photos-${task.id}`}

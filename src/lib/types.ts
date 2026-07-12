@@ -32,6 +32,7 @@ export const TASK_TYPE_KEYS = Object.keys(TASK_TYPES) as TaskType[];
 export interface Column {
   id: string;
   name: string;
+  wip?: number; // лимит задач в колонке (0/undefined — без лимита)
 }
 
 export interface Board {
@@ -71,6 +72,8 @@ export interface Task {
   order: number; // ordering within a column
   mapId: string | null; // Bulut MAP: к какой карте привязана задача
   mapNodeId: string | null; // Bulut MAP: id узла-экрана в графе карты
+  parentId: string | null; // подзадача: id родительской задачи
+  blockedBy: string[]; // id задач, которые блокируют эту
   deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 

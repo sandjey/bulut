@@ -1,15 +1,16 @@
 "use client";
 
-import { Search, SlidersHorizontal, X, ArrowUpDown } from "lucide-react";
+import { Search, SlidersHorizontal, X, ArrowUpDown, Bookmark, Star } from "lucide-react";
 import { FilterState, SortKey, uniqueAssignees, uniqueTags } from "@/lib/filters";
 import { Task, PRIORITY_META, Priority, TASK_TYPES, TASK_TYPE_KEYS } from "@/lib/types";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface FilterBarProps {
   filters: FilterState;
   onChange: (f: FilterState) => void;
   tasks: Task[]; // pool to derive assignees/tags
+  boardId?: string; // для сохранённых фильтров
 }
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -19,7 +20,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   title: "По названию",
 };
 
-export function FilterBar({ filters, onChange, tasks }: FilterBarProps) {
+export function FilterBar({ filters, onChange, tasks, boardId }: FilterBarProps) {
   const [expanded, setExpanded] = useState(false);
   const assignees = useMemo(() => uniqueAssignees(tasks), [tasks]);
   const tags = useMemo(() => uniqueTags(tasks), [tasks]);
@@ -33,6 +34,29 @@ export function FilterBar({ filters, onChange, tasks }: FilterBarProps) {
     (filters.tag ? 1 : 0) +
     (filters.status !== "all" ? 1 : 0) +
     (filters.due !== "all" ? 1 : 0);
+
+  // Сохранённые фильтры (по доске, в браузере)
+  const key = boardId ? `bulut.filters.${boardId}` : null;
+  const [saved, setSaved] = useState<{ name: string; f: FilterState }[]>([]);
+  useEffect(() => {
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) setSaved(JSON.parse(raw));
+    } catch {
+      /* ignore */
+    }
+  }, [key]);
+  const persist = (next: { name: string; f: FilterState }[]) => {
+    setSaved(next);
+    if (key) localStorage.setItem(key, JSON.stringify(next));
+  };
+  const saveCurrent = () => {
+    const name = prompt("Название фильтра:")?.trim();
+    if (!name) return;
+    persist([...saved.filter((s) => s.name !== name), { name, f: filters }]);
+  };
+  const hasActive = activeCount > 0 || !!filters.query;
 
   return (
     <div className="space-y-3">
@@ -82,7 +106,34 @@ export function FilterBar({ filters, onChange, tasks }: FilterBarProps) {
             </span>
           )}
         </button>
+
+        {boardId && hasActive && (
+          <button onClick={saveCurrent} className="btn-outline" title="Сохранить фильтр">
+            <Star className="h-4 w-4" /> <span className="hidden sm:inline">Сохранить</span>
+          </button>
+        )}
       </div>
+
+      {/* Сохранённые фильтры */}
+      {saved.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Bookmark className="h-3.5 w-3.5 text-faint" />
+          {saved.map((s) => (
+            <span key={s.name} className="group inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 text-xs">
+              <button onClick={() => onChange(s.f)} className="font-medium transition hover:text-brand">
+                {s.name}
+              </button>
+              <button
+                onClick={() => persist(saved.filter((x) => x.name !== s.name))}
+                className="text-faint opacity-0 transition hover:text-red-500 group-hover:opacity-100"
+                title="Удалить"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {expanded && (
         <div className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-surface p-3 animate-slide-up sm:grid-cols-3 lg:grid-cols-5">

@@ -68,7 +68,7 @@ function BoardPageInner() {
   };
 
   const boardTasks = useMemo(
-    () => tasks.filter((t) => t.boardId === boardId),
+    () => tasks.filter((t) => t.boardId === boardId && !t.parentId), // подзадачи — внутри родителя
     [tasks, boardId]
   );
 
@@ -86,6 +86,25 @@ function BoardPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, boards]);
+
+  // Горячая клавиша: N — новая задача (когда не печатаешь в поле)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if ((e.key === "n" || e.key === "N") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (board && canCreate) {
+          e.preventDefault();
+          setEditingTask(null);
+          setDefaultCol(board.columns[0]?.id);
+          setModalOpen(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board, canCreate]);
 
   if (!board) {
     return (
@@ -242,7 +261,7 @@ function BoardPageInner() {
         </div>
 
         <div className="mt-3">
-          <FilterBar filters={filters} onChange={setFilters} tasks={boardTasks} />
+          <FilterBar filters={filters} onChange={setFilters} tasks={boardTasks} boardId={board.id} />
         </div>
       </div>
 

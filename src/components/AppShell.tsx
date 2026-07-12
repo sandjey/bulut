@@ -12,12 +12,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen((s) => !s);
+        return;
+      }
+      const el = e.target as HTMLElement;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        setSearchOpen(true);
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setHelpOpen((h) => !h);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -82,6 +94,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <ShortcutsOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
+    </div>
+  );
+}
+
+function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const rows: [string, string][] = [
+    ["N", "Новая задача (на доске)"],
+    ["/", "Поиск"],
+    ["⌘K / Ctrl+K", "Поиск"],
+    ["?", "Эта подсказка"],
+    ["Esc", "Закрыть"],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+      <div className="relative w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-3 text-base font-bold">Горячие клавиши</h2>
+        <div className="space-y-1.5">
+          {rows.map(([k, d]) => (
+            <div key={k} className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-muted">{d}</span>
+              <kbd className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-mono text-xs text-fg">{k}</kbd>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

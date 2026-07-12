@@ -60,6 +60,8 @@ interface TaskRow {
   photos: import("./types").TaskPhoto[];
   map_id: string | null;
   map_node_id: string | null;
+  parent_id: string | null;
+  blocked_by: string[] | null;
   deleted_at: string | null;
 }
 
@@ -127,6 +129,8 @@ const toTask = (r: TaskRow): Task => ({
   order: r.position,
   mapId: r.map_id ?? null,
   mapNodeId: r.map_node_id ?? null,
+  parentId: r.parent_id ?? null,
+  blockedBy: r.blocked_by ?? [],
   deletedAt: r.deleted_at ?? null,
 });
 
@@ -338,6 +342,8 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.photos !== undefined) row.photos = patch.photos;
   if (patch.mapId !== undefined) row.map_id = patch.mapId;
   if (patch.mapNodeId !== undefined) row.map_node_id = patch.mapNodeId;
+  if (patch.parentId !== undefined) row.parent_id = patch.parentId;
+  if (patch.blockedBy !== undefined) row.blocked_by = patch.blockedBy;
   const { error } = await client().from("tasks").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -403,6 +409,8 @@ function taskToRow(t: Task, userId: string) {
     photos: t.photos ?? [],
     map_id: t.mapId ?? null,
     map_node_id: t.mapNodeId ?? null,
+    parent_id: t.parentId ?? null,
+    blocked_by: t.blockedBy ?? [],
   };
 }
 
