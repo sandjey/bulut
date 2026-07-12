@@ -10,6 +10,7 @@ import { MEMBER_ROLES } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
 import { RequirePerm } from "@/components/RequirePerm";
 import { Avatar } from "@/components/Avatar";
+import { RoomInvitePanel } from "@/components/RoomInvitePanel";
 import { cn } from "@/lib/utils";
 
 export default function TeamPage() {
@@ -48,6 +49,11 @@ function TeamPageInner() {
             {team.length} участников
           </span>
         </PageHeader>
+
+        {/* Комната: название + приглашение участников */}
+        <div className="mt-4">
+          <RoomInvitePanel />
+        </div>
 
         <datalist id="role-list">
           {MEMBER_ROLES.map((r) => (
