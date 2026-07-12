@@ -30,7 +30,8 @@ import {
   type Profile,
 } from "@/lib/permissions";
 import { MEMBER_ROLES } from "@/lib/types";
-import { avatarColor, initials, contrastText, cn } from "@/lib/utils";
+import { initials, cn } from "@/lib/utils";
+import { Avatar } from "@/components/Avatar";
 
 const GROUP_ICONS: Record<string, typeof ShieldCheck> = {
   LayoutDashboard,
@@ -226,7 +227,6 @@ function UserRow({
   active: boolean;
   onClick: () => void;
 }) {
-  const bg = avatarColor(profile.email || profile.name || "u");
   const grantedCount =
     profile.role === "member" ? profile.permissions.length : ALL_PERMISSIONS.length;
   return (
@@ -237,12 +237,7 @@ function UserRow({
         active ? "bg-surface-2 shadow-soft" : "hover:bg-surface-2/60",
       )}
     >
-      <span
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold"
-        style={{ backgroundColor: bg, color: contrastText(bg) }}
-      >
-        {initials(profile.name || profile.email || "U")}
-      </span>
+      <Avatar name={profile.name || profile.email || "U"} size={36} src={profile.avatar} />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="truncate text-sm font-semibold">
@@ -350,7 +345,6 @@ function UserEditor({ profile, onBack }: { profile: Profile; onBack: () => void 
     else onBack();
   };
 
-  const bg = avatarColor(profile.email || profile.name || "u");
   const grantedCount = profile.role === "member" ? draft.size : ALL_PERMISSIONS.length;
 
   return (
@@ -364,12 +358,7 @@ function UserEditor({ profile, onBack }: { profile: Profile; onBack: () => void 
           <ChevronRight className="h-4 w-4 rotate-180" /> К списку
         </button>
         <div className="flex flex-wrap items-center gap-3">
-          <span
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-sm font-bold"
-            style={{ backgroundColor: bg, color: contrastText(bg) }}
-          >
-            {initials(profile.name || profile.email || "U")}
-          </span>
+          <Avatar name={profile.name || profile.email || "U"} size={48} src={profile.avatar} />
           <div className="min-w-0 flex-1">
             {canEditFields ? (
               <div className="flex flex-col gap-1">

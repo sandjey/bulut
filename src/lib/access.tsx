@@ -54,6 +54,8 @@ interface AccessContextValue {
   deleteMyProfile: () => Promise<string | null>;
   /** Имена профилей, помеченных удалёнными — для метки «удалённый аккаунт». */
   deletedNames: Set<string>;
+  /** Фото профиля по имени/почте (lowercase) — чтобы показывать аватар везде. */
+  avatarByName: Map<string, string>;
 }
 
 const AccessContext = createContext<AccessContextValue | null>(null);
@@ -143,6 +145,19 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     () => new Set(profiles.filter((p) => p.deletedAt && p.name).map((p) => p.name)),
     [profiles],
   );
+
+  // Фото по имени/почте — чтобы аватар с фото показывался везде (карточки, журнал, отчёты…).
+  const avatarByName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of profiles) {
+      if (!p.avatar) continue;
+      const nm = (p.name || "").trim().toLowerCase();
+      if (nm) m.set(nm, p.avatar);
+      const em = (p.email || "").trim().toLowerCase();
+      if (em) m.set(em, p.avatar);
+    }
+    return m;
+  }, [profiles]);
 
   const role: AppRole = me?.role ?? "member";
   const isOwner = role === "owner";
@@ -397,6 +412,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       updateMyProfile,
       deleteMyProfile,
       deletedNames,
+      avatarByName,
     }),
     [
       loading,
@@ -419,6 +435,7 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
       updateMyProfile,
       deleteMyProfile,
       deletedNames,
+      avatarByName,
     ],
   );
 
@@ -434,4 +451,19 @@ export function useAccess(): AccessContextValue {
 /** Короткий хук: функция проверки прав. */
 export function useCan(): (perm: PermissionKey) => boolean {
   return useAccess().can;
+}
+
+/**
+ * Безопасный поиск фото профиля по имени/почте. Не падает вне AccessProvider
+ * (вернёт null), поэтому Avatar можно использовать где угодно.
+ */
+export function useResolveAvatar(): (name?: string | null) => string | null {
+  const ctx = useContext(AccessContext);
+  return useCallback(
+    (name?: string | null) => {
+      if (!ctx || !name) return null;
+      return ctx.avatarByName.get(name.trim().toLowerCase()) ?? null;
+    },
+    [ctx],
+  );
 }

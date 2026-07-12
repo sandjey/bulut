@@ -1,6 +1,7 @@
 "use client";
 
 import { avatarColor, initials, contrastText } from "@/lib/utils";
+import { useResolveAvatar } from "@/lib/access";
 
 export function Avatar({
   name,
@@ -11,11 +12,15 @@ export function Avatar({
   size?: number;
   src?: string | null;
 }) {
-  if (src) {
+  // Если фото не передали явно — ищем по имени в профилях (показываем везде).
+  const resolve = useResolveAvatar();
+  const photo = src ?? resolve(name);
+
+  if (photo) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={src}
+        src={photo}
         alt={name}
         title={name}
         className="rounded-full object-cover"
