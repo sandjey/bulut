@@ -206,12 +206,9 @@ export function Sidebar({ onNavigate, onOpenSearch }: SidebarProps) {
               <span className="block truncate text-sm font-medium text-fg" title={displayName}>
                 {displayName || "Профиль"}
               </span>
-              <span
-                className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold"
-                style={{ color: roleMeta.color }}
-              >
-                {role === "owner" && <Crown className="h-2.5 w-2.5" />}
-                {role === "admin" && <ShieldCheck className="h-2.5 w-2.5" />}
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-muted">
+                {role === "owner" && <Crown className="h-2.5 w-2.5" style={{ color: roleMeta.color }} />}
+                {role === "admin" && <ShieldCheck className="h-2.5 w-2.5" style={{ color: roleMeta.color }} />}
                 {roleMeta.label}
               </span>
             </span>

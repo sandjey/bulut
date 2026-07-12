@@ -15,7 +15,7 @@ import {
 import { useWorkspace } from "@/lib/workspace";
 import { ROLE_META, type AppRole } from "@/lib/permissions";
 import { findProfileByEmail } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { cn, contrastText } from "@/lib/utils";
 
 /** Панель комнаты: название (редактируемое) + приглашение участников + ожидающие. */
 export function RoomInvitePanel() {
@@ -86,8 +86,8 @@ export function RoomInvitePanel() {
       {/* Заголовок комнаты */}
       <div className="flex items-center gap-3">
         <span
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-bold text-white"
-          style={{ backgroundColor: active.color }}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-bold"
+          style={{ backgroundColor: active.color, color: contrastText(active.color) }}
         >
           {active.name.slice(0, 1).toUpperCase()}
         </span>

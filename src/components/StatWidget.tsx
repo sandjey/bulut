@@ -2,7 +2,7 @@
 
 import { LucideIcon } from "lucide-react";
 import { CountUp } from "./CountUp";
-import { withAlpha } from "@/lib/utils";
+import { withAlpha, contrastText } from "@/lib/utils";
 
 export function StatWidget({
   icon: Icon,
@@ -26,10 +26,11 @@ export function StatWidget({
       />
       <div className="relative flex items-center gap-3.5">
         <span
-          className="grid h-12 w-12 place-items-center rounded-2xl text-white"
+          className="grid h-12 w-12 place-items-center rounded-2xl"
           style={{
             background: `linear-gradient(135deg, ${withAlpha(color, 1)}, ${withAlpha(color, 0.6)})`,
             boxShadow: `0 8px 20px -8px ${withAlpha(color, 0.7)}`,
+            color: contrastText(color),
           }}
         >
           <Icon className="h-5 w-5" />

@@ -2,21 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Users,
-  Trash2,
-  Crown,
-  ShieldCheck,
-  Loader2,
-  LogOut,
-  AlertTriangle,
-} from "lucide-react";
+import { Users, Trash2, Loader2, LogOut, AlertTriangle } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
 import { useAuth } from "@/lib/auth";
 import { Avatar } from "@/components/Avatar";
+import { RoleBadge } from "@/components/RoleBadge";
 import { ROLE_META, type AppRole } from "@/lib/permissions";
 import { BOARD_COLORS } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { contrastText } from "@/lib/utils";
 
 /** Управление комнатой: название, цвет, участники и роли, опасная зона. */
 export function RoomSettings() {
@@ -69,8 +62,8 @@ export function RoomSettings() {
       <section className="rounded-2xl border border-border bg-surface p-5">
         <div className="flex items-center gap-3">
           <span
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-lg font-bold text-white"
-            style={{ backgroundColor: active.color }}
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-lg font-bold"
+            style={{ backgroundColor: active.color, color: contrastText(active.color) }}
           >
             {active.name.slice(0, 1).toUpperCase()}
           </span>
@@ -134,14 +127,7 @@ export function RoomSettings() {
                     <option value="admin">Администратор</option>
                   </select>
                 ) : (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                    style={{ backgroundColor: `${ROLE_META[m.role].color}22`, color: ROLE_META[m.role].color }}
-                  >
-                    {m.role === "owner" && <Crown className="h-3 w-3" />}
-                    {m.role === "admin" && <ShieldCheck className="h-3 w-3" />}
-                    {ROLE_META[m.role].label}
-                  </span>
+                  <RoleBadge role={m.role} />
                 )}
                 {canEditThis && (
                   <button

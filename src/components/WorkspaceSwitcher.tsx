@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronsUpDown, Check, Plus, Settings, Loader2, Crown } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
 import { BOARD_COLORS } from "@/lib/types";
-import { cn, withAlpha } from "@/lib/utils";
+import { cn, withAlpha, contrastText } from "@/lib/utils";
 
 export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const { workspaces, active, switchWorkspace, createWorkspace } = useWorkspace();
@@ -45,8 +45,8 @@ export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
         className="flex w-full items-center gap-2 rounded-lg border border-border bg-surface-2/50 px-2.5 py-2 text-left transition hover:bg-surface-2"
       >
         <span
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-bold text-white"
-          style={{ backgroundColor: active?.color ?? "#6366f1" }}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-bold"
+          style={{ backgroundColor: active?.color ?? "#6366f1", color: contrastText(active?.color ?? "#6366f1") }}
         >
           {(active?.name ?? "?").slice(0, 1).toUpperCase()}
         </span>
@@ -78,8 +78,8 @@ export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-surface-2"
               >
                 <span
-                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-[10px] font-bold text-white"
-                  style={{ backgroundColor: w.color }}
+                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-[10px] font-bold"
+                  style={{ backgroundColor: w.color, color: contrastText(w.color) }}
                 >
                   {w.name.slice(0, 1).toUpperCase()}
                 </span>

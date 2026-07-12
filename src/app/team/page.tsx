@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { Users, Mail, CheckCircle2, Clock, Crown, ShieldCheck } from "lucide-react";
+import { Users, Mail, CheckCircle2, Clock } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAccess } from "@/lib/access";
 import { useTeam } from "@/lib/team";
-import { ROLE_META } from "@/lib/permissions";
+import { RoleBadge } from "@/components/RoleBadge";
 import { MEMBER_ROLES } from "@/lib/types";
 import { PageHeader } from "@/components/PageHeader";
 import { RequirePerm } from "@/components/RequirePerm";
@@ -78,7 +78,6 @@ function TeamPageInner() {
               const c = counts.get(m.name);
               const profile = access.profiles.find((p) => p.id === m.key) ?? null;
               const editable = profile ? access.canEditProfile(profile) : false;
-              const roleMeta = ROLE_META[m.accountRole];
               return (
                 <div key={m.key} className={cn("card group p-4", m.deleted && "opacity-60")}>
                   <div className="flex items-start gap-3">
@@ -113,14 +112,7 @@ function TeamPageInner() {
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                      style={{ backgroundColor: `${roleMeta.color}22`, color: roleMeta.color }}
-                    >
-                      {m.accountRole === "owner" && <Crown className="h-3 w-3" />}
-                      {m.accountRole === "admin" && <ShieldCheck className="h-3 w-3" />}
-                      {roleMeta.label}
-                    </span>
+                    <RoleBadge role={m.accountRole} />
                     {m.deleted && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-faint">
                         удалённый аккаунт
