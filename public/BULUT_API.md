@@ -1,240 +1,228 @@
-# Bulut API — документация для интеграций и QA
+# Bulut API — документация
 
-REST-API для работы с досками, задачами и картами Bulut: создавать, изменять,
-удалять и читать карточки, видеть все доски, задачи и карты. Подходит для
-автоматизации и инструментов тестировщика.
+REST-API, чтобы **любой пользователь Bulut управлял своим аккаунтом через свою
+авторизацию**: создавать, перемещать, менять и удалять карточки, работать с
+досками, картами, журналом и комментариями. Доступ определяется вашими
+комнатами автоматически (что видите в приложении — то доступно и по API).
+**Никаких общих ключей и сервисных аккаунтов не нужно.**
 
-- **База:** `https://bulut-kappa.vercel.app` (замените на свой домен)
-- **Формат:** JSON. Все ответы вида `{ "data": ... }` или `{ "error": "..." }`.
-- **Краткая справка вживую:** `GET /api` — вернёт список эндпоинтов.
+- **База:** `https://ВАШ_ДОМЕН`
+- **Формат:** JSON. Ответы: `{ "data": ... }` или `{ "error": "..." }`.
+- **Живая справка:** `GET /api`.
 
 ---
 
-## 1. Авторизация
+## 1. Авторизация: вход своим аккаунтом → токен
 
-Каждый запрос — с заголовком **`X-API-Key`**:
+Войдите своим email и паролем (тем же, что в приложении) и получите токен:
 
+```bash
+curl -s -X POST https://ВАШ_ДОМЕН/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{ "email": "you@example.com", "password": "ваш-пароль" }'
 ```
-X-API-Key: <ВАШ_КЛЮЧ>
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "refresh_token": "v1.Mr8...",
+  "token_type": "bearer",
+  "expires_at": 1712345678,
+  "user": { "id": "…", "email": "you@example.com" }
+}
 ```
 
-Ключ и сервисный аккаунт задаются на сервере (переменные окружения):
+Дальше **каждый запрос** — с заголовком:
+```
+Authorization: Bearer <access_token>
+```
 
-| Переменная | Назначение |
-|---|---|
-| `BULUT_API_KEY` | сам секретный ключ (его шлёте в `X-API-Key`) |
-| `BULUT_API_SERVICE_EMAIL` | email аккаунта Bulut, от имени которого работает API |
-| `BULUT_API_SERVICE_PASS` | пароль этого аккаунта |
-
-> **Важно (мультиарендность):** данные разделены по **комнатам**. Сервисный
-> аккаунт (`BULUT_API_SERVICE_EMAIL`) должен быть **участником той комнаты**, с
-> которой работаете. Владелец комнаты приглашает этот email в комнату
-> (раздел «Команда» → Пригласить). Иначе API вернёт `403`.
-
-Альтернатива для отладки из приложения: `Authorization: Bearer <supabase-jwt>`.
+Токен живёт ~1 час. Обновить без повторного ввода пароля:
+```bash
+curl -s -X POST https://ВАШ_ДОМЕН/api/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{ "refresh_token": "<refresh_token>" }'
+```
 
 ---
 
 ## 2. Комнаты (workspace)
 
-Укажите, в какой комнате работать, заголовком **`X-Workspace-Id`** (или
-`?workspace=<id>`). Если не указать — берётся первая комната аккаунта.
-
-**Список доступных комнат:**
+Данные разделены по комнатам. Укажите **`X-Workspace-Id: <id>`** (или
+`?workspace=<id>`). Без него берётся первая ваша комната.
 
 ```bash
-curl -s https://ВАШ_ДОМЕН/api/workspaces -H "X-API-Key: КЛЮЧ"
+curl -s https://ВАШ_ДОМЕН/api/workspaces -H "Authorization: Bearer $TOKEN"
 ```
 ```json
-{ "data": [ { "id": "…uuid…", "name": "Моя команда", "color": "#6366f1", "role": "member" } ], "total": 1 }
+{ "data": [ { "id": "ws-uuid", "name": "Моя команда", "role": "owner" } ], "total": 1 }
 ```
 
-Возьмите нужный `id` и передавайте его в `X-Workspace-Id` во всех запросах.
+Дальше в примерах: `-H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"`.
 
 ---
 
 ## 3. Доски
 
-### Список досок (с колонками и счётчиками)
 ```bash
-curl -s https://ВАШ_ДОМЕН/api/boards \
-  -H "X-API-Key: КЛЮЧ" -H "X-Workspace-Id: WS"
+# список досок с колонками (нужны их id)
+curl -s https://ВАШ_ДОМЕН/api/boards -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"
 ```
 ```json
 { "data": [ {
-  "id": "board-uuid",
-  "name": "Driver",
-  "columns": [
-    { "id": "col-1", "name": "К выполнению", "total": 3, "active": 3, "done": 0 },
-    { "id": "col-2", "name": "В процессе",   "total": 1, "active": 1, "done": 0 }
-  ],
+  "id": "board-uuid", "name": "Driver",
+  "columns": [ { "id": "col-1", "name": "К выполнению", "total": 3, "active": 3, "done": 0 } ],
   "taskCount": 4
-} ], "total": 1 }
+} ] }
 ```
-> `columns[].id` — это **`columnId`**, который нужен для создания/перемещения задач.
+`columns[].id` — это **`columnId`** для задач.
 
-### Создать доску
 ```bash
+# создать доску (без columns — стандартные этапы)
 curl -s -X POST https://ВАШ_ДОМЕН/api/boards \
-  -H "X-API-Key: КЛЮЧ" -H "X-Workspace-Id: WS" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" -H "Content-Type: application/json" \
   -d '{ "name": "Регресс", "columns": ["К выполнению","В работе","Готово"] }'
 ```
-Без `columns` создаются стандартные этапы: `К выполнению · В процессе · Готов к тестированию · На проверке · Готово`.
 
 ---
 
 ## 4. Задачи (карточки)
 
-### Список задач (с фильтрами)
+### Список (фильтры)
 ```bash
-curl -s "https://ВАШ_ДОМЕН/api/tasks?boardId=BOARD&status=active&priority=high" \
-  -H "X-API-Key: КЛЮЧ" -H "X-Workspace-Id: WS"
+curl -s "https://ВАШ_ДОМЕН/api/tasks?boardId=$BOARD&status=active&priority=high" \
+  -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"
 ```
+Параметры: `boardId`, `columnId`, `assignee`, `status` (`active|done`),
+`priority`, `type`, `search`, `dueAfter`/`dueBefore` (`YYYY-MM-DD`),
+`overdue=true`, `hasAssignee`, `mapId`, `mapNodeId`, `subtasks=true`,
+`sort`, `order`, `page`, `limit`.
 
-**Параметры:** `boardId`, `columnId`, `assignee`, `status` (`active|done`),
-`priority` (`low|medium|high`), `type`, `search` (в названии и описании),
-`dueAfter`, `dueBefore` (`YYYY-MM-DD`), `overdue=true`, `hasAssignee`,
-`mapId`, `mapNodeId`, `subtasks=true` (показать подзадачи),
-`sort` (`created_at|due_date|position|title`), `order` (`asc|desc`),
-`page`, `limit` (до 200).
-
-Ответ: `{ "data": [ …задачи… ], "meta": { total, page, limit, pages, hasMore } }`.
-
-### Создать задачу
+### Создать
 ```bash
 curl -s -X POST https://ВАШ_ДОМЕН/api/tasks \
-  -H "X-API-Key: КЛЮЧ" -H "X-Workspace-Id: WS" -H "Content-Type: application/json" \
-  -d '{
-    "title": "Баг: не открывается логин",
-    "boardId": "BOARD_ID",
-    "columnId": "COLUMN_ID",
-    "type": "bug",
-    "priority": "high",
-    "assignee": "Иван",
-    "dueDate": "2026-07-20",
-    "tags": ["auth","regress"],
-    "checklist": [ { "text": "Воспроизвести" }, { "text": "Приложить лог" } ]
-  }'
+  -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" -H "Content-Type: application/json" \
+  -d '{ "title":"Баг логина", "boardId":"'$BOARD'", "columnId":"'$COL'", "type":"bug", "priority":"high", "assignee":"Иван" }'
 ```
-
-**Поля тела:**
-
-| Поле | Тип | Обяз. | Примечание |
-|---|---|:--:|---|
-| `title` | string | ✅ | название |
-| `boardId` | uuid | ✅ | доска |
-| `columnId` | string | ✅ | id колонки (этапа) из доски |
-| `description` | string | | описание (поддерживает Markdown) |
-| `assignee` | string | | имя исполнителя |
-| `priority` | `low\|medium\|high` | | по умолч. `medium` |
-| `type` | см. ниже | | по умолч. `task` |
-| `dueDate` | `YYYY-MM-DD` | | срок «Готов к тестированию» |
-| `doneDueDate` | `YYYY-MM-DD` | | срок «Готово» |
-| `tags` | string[] | | теги |
-| `checklist` | `{text,done?}[]` | | чек-лист |
-| `attachments` | `{name,url}[]` | | ссылки-вложения |
-| `mapId` | uuid | | привязка к карте |
-| `mapNodeId` | string | | привязка к узлу карты (см. раздел 5) |
-| `parentId` | uuid | | сделать подзадачей задачи |
-| `blockedBy` | uuid[] | | задачи, которые её блокируют |
+Поля: `title*`, `boardId*`, `columnId*`, `description`, `assignee`, `priority`,
+`type`, `dueDate`, `doneDueDate`, `tags[]`, `checklist[]`, `attachments[]`,
+`mapId`, `mapNodeId`, `parentId` (подзадача), `blockedBy[]`.
 
 ### Одна задача (+ комментарии)
 ```bash
-curl -s https://ВАШ_ДОМЕН/api/tasks/TASK_ID -H "X-API-Key: КЛЮЧ"
+curl -s https://ВАШ_ДОМЕН/api/tasks/$TASK -H "Authorization: Bearer $TOKEN"
 ```
 
-### Изменить задачу
-Любое подмножество полей + `status` и `columnId` (перемещение между этапами):
+### Изменить / переместить (drag)
 ```bash
-curl -s -X PATCH https://ВАШ_ДОМЕН/api/tasks/TASK_ID \
-  -H "X-API-Key: КЛЮЧ" -H "Content-Type: application/json" \
-  -d '{ "status": "done", "assignee": "Пётр" }'
-```
-```bash
-# переместить в другой этап
-curl -s -X PATCH https://ВАШ_ДОМЕН/api/tasks/TASK_ID \
-  -H "X-API-Key: КЛЮЧ" -H "Content-Type: application/json" \
-  -d '{ "columnId": "COLUMN_ID_ГОТОВО" }'
-```
+# сменить этап и позицию (перетаскивание)
+curl -s -X PATCH https://ВАШ_ДОМЕН/api/tasks/$TASK \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "columnId":"'$COL_DONE'", "position": 0 }'
 
-### Удалить задачу
+# отметить выполненной / сменить исполнителя
+curl -s -X PATCH https://ВАШ_ДОМЕН/api/tasks/$TASK \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "status":"done", "assignee":"Пётр" }'
+```
+Меняются любые поля из создания + `status`, `columnId`, `position`.
+
+### Удалить
 ```bash
-curl -s -X DELETE https://ВАШ_ДОМЕН/api/tasks/TASK_ID -H "X-API-Key: КЛЮЧ"
+curl -s -X DELETE https://ВАШ_ДОМЕН/api/tasks/$TASK -H "Authorization: Bearer $TOKEN"
+# в Корзину (восстановимо). Навсегда: добавьте ?hard=true
 ```
 
 ---
 
-## 5. Карты и id узлов (для привязки карточек)
-
-### Список карт
+## 5. Комментарии задачи
 ```bash
-curl -s https://ВАШ_ДОМЕН/api/maps -H "X-API-Key: КЛЮЧ" -H "X-Workspace-Id: WS"
+# добавить (@имя — упоминание, поддерживается Markdown)
+curl -s -X POST https://ВАШ_ДОМЕН/api/tasks/$TASK/comments \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "text":"Проверил, баг ушёл", "author":"QA" }'
+
+# прочитать
+curl -s https://ВАШ_ДОМЕН/api/tasks/$TASK/comments -H "Authorization: Bearer $TOKEN"
 ```
 
-### Карта + узлы (id для автоматизации)
+---
+
+## 6. Журнал
 ```bash
-curl -s https://ВАШ_ДОМЕН/api/maps/MAP_ID -H "X-API-Key: КЛЮЧ"
+# записи (фильтры: taskId, from, to, page, limit)
+curl -s "https://ВАШ_ДОМЕН/api/journal?from=2026-07-01" \
+  -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"
+
+# создать запись
+curl -s -X POST https://ВАШ_ДОМЕН/api/journal \
+  -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" -H "Content-Type: application/json" \
+  -d '{ "boardName":"Driver", "taskTitle":"Регресс логина", "notes":"Прогнали смоук", "stage":"Готово" }'
+
+# удалить запись
+curl -s -X DELETE https://ВАШ_ДОМЕН/api/journal/$ENTRY -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+## 7. Карты и id узлов (для привязки карточек)
+```bash
+curl -s https://ВАШ_ДОМЕН/api/maps -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS"
+
+# карта + плоский список узлов
+curl -s https://ВАШ_ДОМЕН/api/maps/$MAP -H "Authorization: Bearer $TOKEN"
 ```
 ```json
-{
-  "id": "MAP_ID",
-  "name": "Driver",
-  "nodes": [
-    { "id": "n_login",  "label": "Экран логина", "kind": "screen" },
-    { "id": "n_otp",    "label": "OTP",          "kind": "screen" }
-  ],
-  "graph": { "...": "полный граф, если нужен" }
-}
+{ "id":"MAP", "name":"Driver",
+  "nodes": [ { "id":"n_login", "label":"Экран логина", "kind":"screen" } ] }
 ```
-> Берёте `nodes[].id` и передаёте его как **`mapNodeId`** (а `MAP_ID` как
-> `mapId`) при создании задачи — карточка привяжется к этому экрану, и на карте
-> у узла появится статус («светофор») из её багов.
+Берёте `nodes[].id` → передаёте как **`mapNodeId`** (а `MAP` как `mapId`) при
+создании задачи. Карточка привяжется к экрану, и на карте у узла появится
+статус («светофор») из её багов.
 
-Есть также `POST /api/maps`, `PATCH /api/maps/:id`, `DELETE /api/maps/:id`.
+Также: `POST /api/maps`, `PATCH /api/maps/:id`, `DELETE /api/maps/:id`.
 
 ---
 
-## 6. Типовой сценарий QA (пошагово)
-
+## 8. Полный сценарий (bash)
 ```bash
-KEY="ВАШ_КЛЮЧ"; BASE="https://ВАШ_ДОМЕН"
+BASE="https://ВАШ_ДОМЕН"
 
-# 1) какая комната
-curl -s $BASE/api/workspaces -H "X-API-Key: $KEY"          # → берём WS id
-WS="…"
+# 1) вход → токен
+TOKEN=$(curl -s -X POST $BASE/api/auth/token -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"pass"}' | jq -r .access_token)
 
-# 2) какие доски и колонки
-curl -s $BASE/api/boards -H "X-API-Key: $KEY" -H "X-Workspace-Id: $WS"
-BOARD="…"; COL="…"   # id доски и нужной колонки
+# 2) комната
+WS=$(curl -s $BASE/api/workspaces -H "Authorization: Bearer $TOKEN" | jq -r '.data[0].id')
 
-# 3) завести баг
-curl -s -X POST $BASE/api/tasks -H "X-API-Key: $KEY" -H "X-Workspace-Id: $WS" \
+# 3) доска и колонка
+BOARD=$(curl -s $BASE/api/boards -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" | jq -r '.data[0].id')
+COL=$(curl -s $BASE/api/boards -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" | jq -r '.data[0].columns[0].id')
+
+# 4) создать баг
+TASK=$(curl -s -X POST $BASE/api/tasks -H "Authorization: Bearer $TOKEN" -H "X-Workspace-Id: $WS" \
   -H "Content-Type: application/json" \
-  -d "{\"title\":\"Баг X\",\"boardId\":\"$BOARD\",\"columnId\":\"$COL\",\"type\":\"bug\",\"priority\":\"high\"}"
+  -d "{\"title\":\"Баг\",\"boardId\":\"$BOARD\",\"columnId\":\"$COL\",\"type\":\"bug\"}" | jq -r .data.id)
 
-# 4) позже — закрыть
-curl -s -X PATCH $BASE/api/tasks/TASK_ID -H "X-API-Key: $KEY" \
-  -H "Content-Type: application/json" -d '{ "status": "done" }'
+# 5) закрыть
+curl -s -X PATCH $BASE/api/tasks/$TASK -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"status":"done"}'
 ```
 
 ---
 
-## 7. Справочник значений
-
+## 9. Справочник
 - **priority:** `low` · `medium` · `high`
 - **status:** `active` · `done`
 - **type:** `task` · `bug` · `feature` · `newfeature` · `improvement` ·
   `refactor` · `docs` · `test` · `design` · `research`
-- **Этапы (колонки) по умолчанию:** `К выполнению` · `В процессе` ·
-  `Готов к тестированию` · `На проверке` · `Готово` (у каждой свой `columnId`).
+- **Этапы по умолчанию:** `К выполнению` · `В процессе` · `Готов к тестированию` ·
+  `На проверке` · `Готово`
 
-## 8. Коды ошибок
-
+## 10. Ошибки
 | Код | Значение |
 |---|---|
 | `400` | некорректный запрос / нет обязательного поля |
-| `401` | неверный или отсутствует ключ |
-| `403` | нет доступа к комнате (аккаунт не участник) |
-| `404` | доска / задача / карта не найдена |
+| `401` | не вошли / токен истёк (обновите через refresh_token) |
+| `403` | нет доступа к комнате |
+| `404` | не найдено |
 | `500` | ошибка сервера |
-| `501` | API-ключ или сервисный аккаунт не настроены на сервере |

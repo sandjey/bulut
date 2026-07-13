@@ -59,6 +59,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.attachments = body.attachments;
   if (body.mapId !== undefined) patch.map_id = body.mapId ?? null;
   if (body.mapNodeId !== undefined) patch.map_node_id = body.mapNodeId ?? null;
+  if (body.parentId !== undefined) patch.parent_id = body.parentId ?? null;
+  if (body.blockedBy !== undefined && Array.isArray(body.blockedBy)) patch.blocked_by = body.blockedBy.map(String);
+  // перемещение/сортировка (drag): columnId + position
+  if (body.position !== undefined && Number.isFinite(Number(body.position))) patch.position = Number(body.position);
 
   if (Object.keys(patch).length === 0) return err("No valid fields to update");
 
@@ -70,15 +74,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 // ─── DELETE /api/tasks/:id ────────────────────────────────────────────────────
 
+// По умолчанию — мягкое удаление (в Корзину, восстановимо). ?hard=true — навсегда.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await authenticate(req);
   if (!auth.ok) return err(auth.error, auth.status);
   const { db } = auth;
+  const hard = req.nextUrl.searchParams.get("hard") === "true";
 
-  const { error } = await db.from("tasks").delete().eq("id", params.id);
+  const { error } = hard
+    ? await db.from("tasks").delete().eq("id", params.id)
+    : await db.from("tasks").update({ deleted_at: new Date().toISOString() }).eq("id", params.id);
   if (error) return err(error.message, 500);
 
-  return ok({ deleted: true, id: params.id });
+  return ok({ deleted: true, id: params.id, hard });
 }
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
