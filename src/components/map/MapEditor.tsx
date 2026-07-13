@@ -41,7 +41,9 @@ import {
   Copy,
   Hand,
   BoxSelect,
+  HeartPulse,
 } from "lucide-react";
+import { ProductHealthDialog } from "./ProductHealthDialog";
 import { useMaps } from "@/lib/maps";
 import { useCan } from "@/lib/access";
 import { useStore } from "@/lib/store";
@@ -132,6 +134,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<MapFilter>("all");
   const [selectMode, setSelectMode] = useState(false); // рамочное выделение курсором
+  const [healthOpen, setHealthOpen] = useState(false);
 
   const rf = useReactFlow();
   const searchParams = useSearchParams();
@@ -533,9 +536,15 @@ function EditorInner({ map }: { map: ProjectMap }) {
               {selectMode ? <BoxSelect className="h-4 w-4" /> : <Hand className="h-4 w-4" />}
             </ToolbarBtn>
           )}
+          <ToolbarBtn onClick={() => setHealthOpen(true)} title="Здоровье продукта — статус всех экранов и создание задач">
+            <HeartPulse className="h-4 w-4" />
+          </ToolbarBtn>
           <ToolbarBtn onClick={() => rf.fitView({ padding: 0.2, duration: 300 })} title="Показать всё"><Maximize className="h-4 w-4" /></ToolbarBtn>
         </div>
       </div>
+
+      <ProductHealthDialog open={healthOpen} onClose={() => setHealthOpen(false)} mapId={map.id} nodes={nodes} />
+
 
       <HealthStrip nodes={nodes} mapId={map.id} filter={filter} setFilter={setFilter} />
 
