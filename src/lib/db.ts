@@ -814,11 +814,12 @@ export async function deleteWorkspaceRow(id: string) {
   if (error) throw error;
 }
 
-/** Участники комнаты (join на профили для имени/фото). */
+/** Участники комнаты. Профили тянем отдельно (нет прямого FK workspace_members→profiles). */
 export async function fetchMembers(workspaceId: string): Promise<WorkspaceMember[]> {
-  const { data, error } = await client()
+  const c = client();
+  const { data, error } = await c
     .from("workspace_members")
-    .select("id, workspace_id, user_id, role, permissions, created_at, profiles(name, email, avatar)")
+    .select("id, workspace_id, user_id, role, permissions, created_at")
     .eq("workspace_id", workspaceId);
   if (error) throw error;
   type Row = {
@@ -828,19 +829,33 @@ export async function fetchMembers(workspaceId: string): Promise<WorkspaceMember
     role: AppRole;
     permissions: string[] | null;
     created_at: string;
-    profiles: { name: string | null; email: string | null; avatar: string | null } | null;
   };
-  return (data as unknown as Row[]).map((r) => ({
-    id: r.id,
-    workspaceId: r.workspace_id,
-    userId: r.user_id,
-    role: (r.role ?? "member") as AppRole,
-    permissions: (r.permissions ?? []) as PermissionKey[],
-    createdAt: r.created_at,
-    name: r.profiles?.name || r.profiles?.email || "Участник",
-    email: r.profiles?.email ?? "",
-    avatar: r.profiles?.avatar ?? null,
-  }));
+  const rows = (data ?? []) as Row[];
+
+  // подтягиваем имя/почту/фото из profiles по user_id
+  const ids = rows.map((r) => r.user_id);
+  const profById = new Map<string, { name: string; email: string; avatar: string | null }>();
+  if (ids.length) {
+    const { data: profs } = await c.from("profiles").select("id, name, email, avatar").in("id", ids);
+    for (const p of (profs ?? []) as { id: string; name: string | null; email: string | null; avatar: string | null }[]) {
+      profById.set(p.id, { name: p.name ?? "", email: p.email ?? "", avatar: p.avatar ?? null });
+    }
+  }
+
+  return rows.map((r) => {
+    const p = profById.get(r.user_id);
+    return {
+      id: r.id,
+      workspaceId: r.workspace_id,
+      userId: r.user_id,
+      role: (r.role ?? "member") as AppRole,
+      permissions: (r.permissions ?? []) as PermissionKey[],
+      createdAt: r.created_at,
+      name: p?.name || p?.email || "Участник",
+      email: p?.email ?? "",
+      avatar: p?.avatar ?? null,
+    };
+  });
 }
 
 export async function updateWsMemberRow(
