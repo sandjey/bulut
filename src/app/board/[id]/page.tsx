@@ -4,15 +4,19 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-import { Plus, Download, ArrowLeft, Pencil, Check, Columns3, List as ListIcon, CalendarDays } from "lucide-react";
+import { Plus, Download, ArrowLeft, Pencil, Check, Columns3, List as ListIcon, CalendarDays, GanttChartSquare } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { BoardColumn } from "@/components/BoardColumn";
 import { BoardListView } from "@/components/board/BoardListView";
 import { BoardCalendarView } from "@/components/board/BoardCalendarView";
+import { BoardTimelineView } from "@/components/board/BoardTimelineView";
 import { TaskModal } from "@/components/TaskModal";
 import { FilterBar } from "@/components/FilterBar";
 import { ExportModal } from "@/components/ExportModal";
+import { BoardSettingsDialog } from "@/components/BoardSettingsDialog";
+import { rulesPatchFor } from "@/lib/board-rules";
+import { Settings as SettingsIcon } from "lucide-react";
 import { RequirePerm } from "@/components/RequirePerm";
 import { Task, BOARD_COLORS } from "@/lib/types";
 import { applyFilters, DEFAULT_FILTERS, FilterState } from "@/lib/filters";
@@ -62,20 +66,21 @@ function BoardPageInner() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [defaultCol, setDefaultCol] = useState<string | undefined>();
   const [exportOpen, setExportOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
-  const [view, setView] = useState<"board" | "list" | "calendar">("board");
+  const [view, setView] = useState<"board" | "list" | "calendar" | "timeline">("board");
   const [groupBy, setGroupBy] = useState<GroupKey>("none");
 
   useEffect(() => {
     const v = localStorage.getItem("bulut.boardView");
-    if (v === "list" || v === "calendar" || v === "board") setView(v);
+    if (v === "list" || v === "calendar" || v === "board" || v === "timeline") setView(v);
     const g = localStorage.getItem("bulut.groupBy") as GroupKey | null;
     if (g && ["none", "assignee", "priority", "epic", "sprint"].includes(g)) setGroupBy(g);
   }, []);
-  const changeView = (v: "board" | "list" | "calendar") => {
+  const changeView = (v: "board" | "list" | "calendar" | "timeline") => {
     setView(v);
     localStorage.setItem("bulut.boardView", v);
   };
@@ -198,6 +203,12 @@ function BoardPageInner() {
     if (groupBy !== "none" && destLane !== null && destLane !== srcLane) {
       updateTask(draggableId, { [groupField[groupBy]]: destLane } as Partial<Task>);
     }
+    // Автоматизация: правила при перемещении в колонку
+    const moving = tasks.find((t) => t.id === draggableId);
+    if (moving && moving.columnId !== destCol) {
+      const patch = rulesPatchFor(board.id, destCol);
+      if (patch) updateTask(draggableId, patch);
+    }
   };
 
   const openCreate = (columnId: string) => {
@@ -299,6 +310,7 @@ function BoardPageInner() {
                 ["board", Columns3, "Доска"],
                 ["list", ListIcon, "Список"],
                 ["calendar", CalendarDays, "Календарь"],
+                ["timeline", GanttChartSquare, "Таймлайн"],
               ] as const).map(([v, Icon, label]) => (
                 <button
                   key={v}
@@ -327,6 +339,11 @@ function BoardPageInner() {
                 ))}
               </select>
             )}
+            {canManage && (
+              <button className="btn-outline" onClick={() => setSettingsOpen(true)} title="Настройки доски (поля, автоматизация)">
+                <SettingsIcon className="h-4 w-4" />
+              </button>
+            )}
             {canExport && (
               <button className="btn-outline" onClick={() => setExportOpen(true)}>
                 <Download className="h-4 w-4" />
@@ -347,9 +364,10 @@ function BoardPageInner() {
         </div>
       </div>
 
-      {/* Список / Календарь */}
+      {/* Список / Календарь / Таймлайн */}
       {view === "list" && <BoardListView board={board} tasks={filtered} onOpen={openEdit} />}
       {view === "calendar" && <BoardCalendarView tasks={filtered} onOpen={openEdit} />}
+      {view === "timeline" && <BoardTimelineView tasks={filtered} onOpen={openEdit} />}
 
       {/* Доска (канбан) */}
       {view === "board" && (
@@ -447,6 +465,7 @@ function BoardPageInner() {
         defaultColumnId={defaultCol}
       />
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} defaultBoardId={board.id} />
+      <BoardSettingsDialog board={board} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

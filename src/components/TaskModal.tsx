@@ -146,6 +146,43 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   const allSprints = useMemo(() => Array.from(new Set(tasks.map((t) => t.sprint).filter(Boolean))), [tasks]);
   const people = useMemo(() => Array.from(new Set(tasks.map((t) => t.assignee).filter(Boolean))), [tasks]);
 
+  // Шаблоны задач (в браузере, по доске)
+  const tplKey = `bulut.templates.${board.id}`;
+  const [templates, setTemplates] = useState<{ id: string; name: string; data: Record<string, unknown> }[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    try {
+      setTemplates(JSON.parse(localStorage.getItem(tplKey) || "[]"));
+    } catch {
+      /* ignore */
+    }
+  }, [open, tplKey]);
+  const applyTemplate = (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    const d = t.data as Record<string, unknown>;
+    if (d.title) setTitle(String(d.title));
+    setDesc(String(d.desc ?? ""));
+    setType((d.type as TaskType) ?? "task");
+    setPriority((d.priority as Priority) ?? "medium");
+    setTags(Array.isArray(d.tags) ? (d.tags as string[]) : []);
+    setEpic(String(d.epic ?? ""));
+    setSprint(String(d.sprint ?? ""));
+    setStoryPoints(d.storyPoints != null ? String(d.storyPoints) : "");
+  };
+  const saveTemplate = () => {
+    const name = prompt("Название шаблона:")?.trim();
+    if (!name) return;
+    const t = {
+      id: crypto.randomUUID(),
+      name,
+      data: { title: title.trim() || undefined, desc, type, priority, tags, epic, sprint, storyPoints: storyPoints || null },
+    };
+    const next = [...templates.filter((x) => x.name !== name), t];
+    setTemplates(next);
+    localStorage.setItem(tplKey, JSON.stringify(next));
+  };
+
   const { maps } = useMaps();
   const selectedMap = useMemo(() => maps.find((m) => m.id === mapId) ?? null, [maps, mapId]);
   const allNodes = useMemo(() => selectedMap?.graph.nodes ?? [], [selectedMap]);
@@ -340,6 +377,29 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
             <UserPlus className="h-3.5 w-3.5 text-brand" />
             Создал <span className="font-semibold text-fg">{task.createdBy}</span>
             <span className="text-faint">· {fmtDateTime(task.createdAt)}</span>
+          </div>
+        )}
+
+        {/* ── Шаблоны ── */}
+        {canSave && (
+          <div className="flex flex-wrap items-center gap-2">
+            {templates.length > 0 && (
+              <select
+                className="input h-8 w-auto py-1 text-sm"
+                value=""
+                onChange={(e) => e.target.value && applyTemplate(e.target.value)}
+              >
+                <option value="">Из шаблона…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" onClick={saveTemplate} className="text-xs text-muted underline hover:text-fg">
+              Сохранить как шаблон
+            </button>
           </div>
         )}
 

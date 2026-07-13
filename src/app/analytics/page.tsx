@@ -99,6 +99,32 @@ function AnalyticsPageInner() {
     return { done, active, overdue, total: tasks.length };
   }, [tasks, today]);
 
+  // Поток: среднее время выполнения (cycle time), сделано за 30 дней, распределение по этапам
+  const cycleTime = useMemo(() => {
+    const done = tasks.filter((t) => t.status === "done" && t.completedAt && t.createdAt);
+    if (!done.length) return null;
+    const days = done.map((t) => Math.max(0, (Date.parse(t.completedAt!) - Date.parse(t.createdAt)) / 86400000));
+    return days.reduce((a, b) => a + b, 0) / days.length;
+  }, [tasks]);
+
+  const throughput30 = useMemo(() => {
+    const since = Date.now() - 30 * 86400000;
+    return tasks.filter((t) => t.status === "done" && t.completedAt && Date.parse(t.completedAt) >= since).length;
+  }, [tasks]);
+
+  const stageDist = useMemo(() => {
+    const map = new Map<string, number>();
+    tasks
+      .filter((t) => t.status !== "done" && !t.parentId)
+      .forEach((t) => {
+        const b = boards.find((x) => x.id === t.boardId);
+        const name = b?.columns.find((c) => c.id === t.columnId)?.name ?? "—";
+        map.set(name, (map.get(name) ?? 0) + 1);
+      });
+    return Array.from(map, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  }, [tasks, boards]);
+  const maxStage = Math.max(1, ...stageDist.map((s) => s.count));
+
   const pieData = [
     { name: "Выполнено", value: totals.done, color: "#10b981" },
     { name: "В работе", value: totals.active - totals.overdue, color: "#0ea5e9" },
@@ -118,6 +144,40 @@ function AnalyticsPageInner() {
           <Stat icon={CheckCircle2} label="Выполнено" value={totals.done} color="#10b981" />
           <Stat icon={Clock} label="В работе" value={totals.active} color="#0ea5e9" />
           <Stat icon={AlertTriangle} label="Просрочено" value={totals.overdue} color="#ef4444" />
+        </div>
+
+        {/* Поток команды */}
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="card p-5">
+            <div className="text-sm text-muted">Среднее время выполнения</div>
+            <div className="mt-1 text-3xl font-bold">
+              {cycleTime == null ? "—" : `${cycleTime.toFixed(1)}`} <span className="text-base font-normal text-muted">дн.</span>
+            </div>
+            <p className="mt-1 text-xs text-faint">от создания до «Готово» (чем меньше — тем быстрее поток)</p>
+          </div>
+          <div className="card p-5">
+            <div className="text-sm text-muted">Сделано за 30 дней</div>
+            <div className="mt-1 text-3xl font-bold">{throughput30}</div>
+            <p className="mt-1 text-xs text-faint">пропускная способность команды</p>
+          </div>
+          <div className="card p-5">
+            <div className="mb-2 text-sm text-muted">Где сейчас работа (по этапам)</div>
+            {stageDist.length === 0 ? (
+              <p className="text-xs text-faint">Активных задач нет</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stageDist.map((s) => (
+                  <div key={s.name} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 truncate text-xs text-muted">{s.name}</span>
+                    <div className="h-3 flex-1 overflow-hidden rounded-full bg-surface-2">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${(s.count / maxStage) * 100}%` }} />
+                    </div>
+                    <span className="w-6 shrink-0 text-right text-xs font-semibold tabular-nums">{s.count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
