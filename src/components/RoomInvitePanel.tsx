@@ -23,6 +23,7 @@ export function RoomInvitePanel() {
   const {
     active,
     myRole,
+    members,
     invitations,
     refreshRoom,
     inviteMember,
@@ -49,6 +50,12 @@ export function RoomInvitePanel() {
   const invite = async () => {
     const em = email.trim();
     if (!em) return;
+    // Уже в комнате — повторно приглашать нельзя.
+    if (members.some((m) => m.email.toLowerCase() === em.toLowerCase())) {
+      setLastLink(null);
+      setMsg({ ok: false, text: `«${em}» уже участник этой комнаты.` });
+      return;
+    }
     setBusy(true);
     setMsg(null);
     setLastLink(null);
