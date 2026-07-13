@@ -17,6 +17,8 @@ interface BoardColumnProps {
   onAddTask: (columnId: string) => void;
   onQuickAdd: (columnId: string, title: string) => void;
   onOpenTask: (task: Task) => void;
+  droppableId?: string; // для дорожек (swimlanes) — уникальный id зоны
+  compact?: boolean; // в дорожках шапка компактнее
 }
 
 export function BoardColumn({
@@ -27,6 +29,8 @@ export function BoardColumn({
   onAddTask,
   onQuickAdd,
   onOpenTask,
+  droppableId,
+  compact,
 }: BoardColumnProps) {
   const { renameColumn, deleteColumn, updateBoard } = useStore();
   const can = useCan();
@@ -152,7 +156,7 @@ export function BoardColumn({
       </div>
 
       {/* droppable list */}
-      <Droppable droppableId={columnId}>
+      <Droppable droppableId={droppableId ?? columnId}>
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}

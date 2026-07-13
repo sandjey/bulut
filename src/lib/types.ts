@@ -35,11 +35,18 @@ export interface Column {
   wip?: number; // лимит задач в колонке (0/undefined — без лимита)
 }
 
+/** Кастомное поле доски (определение). Значения хранятся в task.custom[id]. */
+export interface CustomField {
+  id: string;
+  name: string;
+}
+
 export interface Board {
   id: string;
   name: string;
   color: string; // hex color for the colored label
   columns: Column[];
+  customFields?: CustomField[]; // свои поля карточек
   createdAt: string; // ISO
   deletedAt?: string | null; // ISO — в Корзине, если задано
 }
@@ -74,6 +81,11 @@ export interface Task {
   mapNodeId: string | null; // Bulut MAP: id узла-экрана в графе карты
   parentId: string | null; // подзадача: id родительской задачи
   blockedBy: string[]; // id задач, которые блокируют эту
+  storyPoints: number | null; // оценка сложности (очки)
+  epic: string; // эпик (крупная цель), метка-строка
+  sprint: string; // спринт, метка-строка
+  watchers: string[]; // наблюдатели (имена) — получают уведомления
+  custom: Record<string, string>; // значения кастомных полей доски
   deletedAt?: string | null; // ISO — в Корзине, если задано
 }
 

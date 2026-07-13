@@ -17,6 +17,16 @@ import { RequirePerm } from "@/components/RequirePerm";
 import { Task, BOARD_COLORS } from "@/lib/types";
 import { applyFilters, DEFAULT_FILTERS, FilterState } from "@/lib/filters";
 
+type GroupKey = "none" | "assignee" | "priority" | "epic" | "sprint";
+const SWIM_SEP = "\u0001"; // разделитель дорожки и колонки в droppableId
+const GROUP_LABELS: Record<GroupKey, string> = {
+  none: "Без группировки",
+  assignee: "По исполнителю",
+  priority: "По приоритету",
+  epic: "По эпику",
+  sprint: "По спринту",
+};
+
 export default function BoardPage() {
   return (
     <Suspense
@@ -39,7 +49,7 @@ function BoardPageInner() {
   const searchParams = useSearchParams();
   const boardId = params.id as string;
 
-  const { boards, tasks, moveTask, addColumn, updateBoard, createTask } = useStore();
+  const { boards, tasks, moveTask, addColumn, updateBoard, createTask, updateTask } = useStore();
   const can = useCan();
   const canManage = can("board.manage");
   const canCreate = can("card.create");
@@ -57,14 +67,21 @@ function BoardPageInner() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [view, setView] = useState<"board" | "list" | "calendar">("board");
+  const [groupBy, setGroupBy] = useState<GroupKey>("none");
 
   useEffect(() => {
     const v = localStorage.getItem("bulut.boardView");
     if (v === "list" || v === "calendar" || v === "board") setView(v);
+    const g = localStorage.getItem("bulut.groupBy") as GroupKey | null;
+    if (g && ["none", "assignee", "priority", "epic", "sprint"].includes(g)) setGroupBy(g);
   }, []);
   const changeView = (v: "board" | "list" | "calendar") => {
     setView(v);
     localStorage.setItem("bulut.boardView", v);
+  };
+  const changeGroup = (g: GroupKey) => {
+    setGroupBy(g);
+    localStorage.setItem("bulut.groupBy", g);
   };
 
   const boardTasks = useMemo(
@@ -73,6 +90,36 @@ function BoardPageInner() {
   );
 
   const filtered = useMemo(() => applyFilters(boardTasks, filters), [boardTasks, filters]);
+
+  // Дорожки (swimlanes): значение группы у задачи
+  const groupField: Record<Exclude<GroupKey, "none">, keyof Task> = {
+    assignee: "assignee",
+    priority: "priority",
+    epic: "epic",
+    sprint: "sprint",
+  };
+  const groupValue = (t: Task): string =>
+    groupBy === "none" ? "" : String((t as unknown as Record<string, unknown>)[groupField[groupBy]] ?? "");
+
+  const lanes = useMemo(() => {
+    if (groupBy === "none") return [] as { key: string; label: string }[];
+    if (groupBy === "priority")
+      return [
+        { key: "high", label: "Высокий" },
+        { key: "medium", label: "Средний" },
+        { key: "low", label: "Низкий" },
+      ];
+    const field = groupField[groupBy];
+    const vals = new Set(filtered.map((t) => String((t as unknown as Record<string, unknown>)[field] ?? "")));
+    const arr = Array.from(vals).filter(Boolean).sort().map((v) => ({ key: v, label: v }));
+    if (vals.has(""))
+      arr.push({
+        key: "",
+        label: groupBy === "assignee" ? "Без исполнителя" : groupBy === "epic" ? "Без эпика" : "Без спринта",
+      });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, groupBy]);
 
   // open a task from ?task= query (deep link from search)
   useEffect(() => {
@@ -125,11 +172,32 @@ function BoardPageInner() {
       : inCol;
   };
 
+  const parseDrop = (id: string): [string | null, string] => {
+    const i = id.indexOf(SWIM_SEP);
+    return i >= 0 ? [id.slice(0, i), id.slice(i + 1)] : [null, id];
+  };
+
+  // при быстром добавлении в дорожке — сразу проставить значение группы
+  const laneExtra = (
+    key: string,
+  ): { assignee?: string; priority?: "low" | "medium" | "high"; epic?: string; sprint?: string } => {
+    if (groupBy === "assignee") return { assignee: key };
+    if (groupBy === "priority") return { priority: key as "low" | "medium" | "high" };
+    if (groupBy === "epic") return { epic: key };
+    if (groupBy === "sprint") return { sprint: key };
+    return {};
+  };
+
   const onDragEnd = (result: DropResult) => {
     if (!canMove) return;
-    const { destination, draggableId } = result;
+    const { destination, source, draggableId } = result;
     if (!destination) return;
-    moveTask(draggableId, destination.droppableId, destination.index);
+    const [destLane, destCol] = parseDrop(destination.droppableId);
+    const [srcLane] = parseDrop(source.droppableId);
+    moveTask(draggableId, destCol, destination.index);
+    if (groupBy !== "none" && destLane !== null && destLane !== srcLane) {
+      updateTask(draggableId, { [groupField[groupBy]]: destLane } as Partial<Task>);
+    }
   };
 
   const openCreate = (columnId: string) => {
@@ -245,6 +313,20 @@ function BoardPageInner() {
                 </button>
               ))}
             </div>
+            {view === "board" && (
+              <select
+                value={groupBy}
+                onChange={(e) => changeGroup(e.target.value as GroupKey)}
+                className="input h-9 w-auto py-1 text-sm"
+                title="Группировка (дорожки)"
+              >
+                {(Object.keys(GROUP_LABELS) as GroupKey[]).map((g) => (
+                  <option key={g} value={g}>
+                    {GROUP_LABELS[g]}
+                  </option>
+                ))}
+              </select>
+            )}
             {canExport && (
               <button className="btn-outline" onClick={() => setExportOpen(true)}>
                 <Download className="h-4 w-4" />
@@ -272,6 +354,7 @@ function BoardPageInner() {
       {/* Доска (канбан) */}
       {view === "board" && (
       <DragDropContext onDragEnd={onDragEnd}>
+        {groupBy === "none" ? (
         <div className="board-scroll flex flex-1 gap-4 overflow-x-auto p-4 sm:p-6">
           {board.columns.map((col) => (
             <BoardColumn
@@ -317,6 +400,42 @@ function BoardPageInner() {
           </div>
           )}
         </div>
+        ) : (
+        // ── Дорожки (swimlanes) ──
+        <div className="board-scroll flex-1 overflow-auto p-4 sm:p-6">
+          {lanes.length === 0 && <p className="py-16 text-center text-sm text-faint">Нет задач</p>}
+          {lanes.map((lane) => {
+            const count = filtered.filter((t) => groupValue(t) === lane.key).length;
+            if (count === 0) return null;
+            return (
+              <div key={lane.key || "__none"} className="mb-5">
+                <div className="mb-2 flex items-center gap-2 px-1 text-sm font-semibold">
+                  <span>{lane.label}</span>
+                  <span className="text-xs font-normal text-muted">{count}</span>
+                </div>
+                <div className="board-scroll flex gap-4 overflow-x-auto pb-1">
+                  {board.columns.map((col) => (
+                    <BoardColumn
+                      key={col.id}
+                      board={board}
+                      columnId={col.id}
+                      columnName={col.name}
+                      tasks={tasksByColumn(col.id).filter((t) => groupValue(t) === lane.key)}
+                      droppableId={`${lane.key}${SWIM_SEP}${col.id}`}
+                      compact
+                      onAddTask={openCreate}
+                      onQuickAdd={(colId, title) =>
+                        createTask({ boardId: board.id, columnId: colId, title, ...laneExtra(lane.key) })
+                      }
+                      onOpenTask={openEdit}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        )}
       </DragDropContext>
       )}
 

@@ -82,6 +82,7 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
     };
     notifyComment(task.assignee);
     notifyComment(task.createdBy);
+    (task.watchers ?? []).forEach(notifyComment);
   };
 
   const startReview = () => moveTask(task.id, reviewColumnId(board), 0);

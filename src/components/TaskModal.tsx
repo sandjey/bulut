@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   Activity,
   GitBranch,
+  Target,
 } from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
@@ -134,8 +135,16 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
   const [mapId, setMapId] = useState<string>("");
   const [screenId, setScreenId] = useState<string>(""); // выбранный экран (kind=screen)
   const [mapNodeId, setMapNodeId] = useState<string>(""); // выбранный этап (узел под экраном)
+  const [storyPoints, setStoryPoints] = useState<string>("");
+  const [epic, setEpic] = useState("");
+  const [sprint, setSprint] = useState("");
+  const [watchers, setWatchers] = useState<string[]>([]);
+  const [custom, setCustom] = useState<Record<string, string>>({});
 
   const allTags = useMemo(() => uniqueTags(tasks), [tasks]);
+  const allEpics = useMemo(() => Array.from(new Set(tasks.map((t) => t.epic).filter(Boolean))), [tasks]);
+  const allSprints = useMemo(() => Array.from(new Set(tasks.map((t) => t.sprint).filter(Boolean))), [tasks]);
+  const people = useMemo(() => Array.from(new Set(tasks.map((t) => t.assignee).filter(Boolean))), [tasks]);
 
   const { maps } = useMaps();
   const selectedMap = useMemo(() => maps.find((m) => m.id === mapId) ?? null, [maps, mapId]);
@@ -199,6 +208,11 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setMapId(task.mapId ?? "");
       setScreenId("");
       setMapNodeId(task.mapNodeId ?? "");
+      setStoryPoints(task.storyPoints != null ? String(task.storyPoints) : "");
+      setEpic(task.epic ?? "");
+      setSprint(task.sprint ?? "");
+      setWatchers(task.watchers ?? []);
+      setCustom(task.custom ?? {});
     } else {
       setTitle("");
       setDesc("");
@@ -212,6 +226,11 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
       setMapId("");
       setScreenId("");
       setMapNodeId("");
+      setStoryPoints("");
+      setEpic("");
+      setSprint("");
+      setWatchers([]);
+      setCustom({});
     }
   }, [open, task, defaultColumnId, board.columns]);
 
@@ -230,6 +249,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         });
       }
     };
+    const points = storyPoints.trim() === "" ? null : Math.max(0, parseInt(storyPoints, 10) || 0);
     if (editing && task) {
       updateTask(task.id, {
         title: title.trim(),
@@ -243,6 +263,11 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         columnId,
         mapId: mapId || null,
         mapNodeId: mapId ? effectiveNodeId || null : null,
+        storyPoints: points,
+        epic: epic.trim(),
+        sprint: sprint.trim(),
+        watchers,
+        custom,
       });
       notifyAssign(task.id);
     } else {
@@ -259,6 +284,11 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
         tags,
         mapId: mapId || null,
         mapNodeId: mapId ? effectiveNodeId || null : null,
+        storyPoints: points,
+        epic: epic.trim(),
+        sprint: sprint.trim(),
+        watchers,
+        custom,
       });
       notifyAssign(created.id);
     }
@@ -404,7 +434,57 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskM
           </div>
         </div>
 
-        {/* ── Складные секции (открываются по клику или сами, если есть данные) ── */}
+        {/* ── Планирование: очки, эпик, спринт, наблюдатели, свои поля ── */}
+        <Section
+          key={`plan-${task?.id ?? "new"}`}
+          title="Планирование"
+          icon={Target}
+          hint="очки · эпик · спринт · наблюдатели"
+          defaultOpen={!!(epic || sprint || storyPoints || watchers.length || (board.customFields?.length ?? 0) > 0)}
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label">Очки</label>
+              <input
+                type="number"
+                min={0}
+                className="input"
+                value={storyPoints}
+                onChange={(e) => setStoryPoints(e.target.value)}
+                placeholder="—"
+              />
+            </div>
+            <div>
+              <label className="label">Эпик</label>
+              <input className="input" list="epics-list" value={epic} onChange={(e) => setEpic(e.target.value)} placeholder="напр. Регистрация" />
+              <datalist id="epics-list">{allEpics.map((x) => <option key={x} value={x} />)}</datalist>
+            </div>
+            <div>
+              <label className="label">Спринт</label>
+              <input className="input" list="sprints-list" value={sprint} onChange={(e) => setSprint(e.target.value)} placeholder="напр. Спринт 5" />
+              <datalist id="sprints-list">{allSprints.map((x) => <option key={x} value={x} />)}</datalist>
+            </div>
+          </div>
+          <div className="mt-3">
+            <label className="label">Наблюдатели (получают уведомления)</label>
+            <TagInput tags={watchers} onChange={setWatchers} suggestions={people} />
+          </div>
+          {(board.customFields ?? []).length > 0 && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(board.customFields ?? []).map((f) => (
+                <div key={f.id}>
+                  <label className="label">{f.name}</label>
+                  <input
+                    className="input"
+                    value={custom[f.id] ?? ""}
+                    onChange={(e) => setCustom((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
         <Section
           key={`due-${task?.id ?? "new"}`}
           title="Сроки"

@@ -173,6 +173,11 @@ export interface NewTaskInput {
   mapId?: string | null;
   mapNodeId?: string | null;
   parentId?: string | null;
+  epic?: string;
+  sprint?: string;
+  storyPoints?: number | null;
+  watchers?: string[];
+  custom?: Record<string, string>;
 }
 
 interface StoreContextValue extends AppData {
@@ -422,6 +427,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         name: name.trim() || "Новая доска",
         color: color || BOARD_COLORS[Math.floor(Math.random() * BOARD_COLORS.length)],
         columns: DEFAULT_COLUMN_NAMES.map((n) => ({ id: uuid(), name: n })),
+        customFields: [],
         createdAt: new Date().toISOString(),
       };
       const position = dataRef.current.boards.length;
@@ -554,6 +560,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         mapNodeId: input.mapNodeId ?? null,
         parentId: input.parentId ?? null,
         blockedBy: [],
+        storyPoints: input.storyPoints ?? null,
+        epic: input.epic ?? "",
+        sprint: input.sprint ?? "",
+        watchers: input.watchers ?? [],
+        custom: input.custom ?? {},
       };
       apply({ ...dataRef.current, tasks: [...dataRef.current.tasks, task] });
       if (userId) persist(db.insertTask(task, userId));

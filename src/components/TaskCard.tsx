@@ -15,6 +15,8 @@ import {
   UserPlus,
   Lock,
   ListTree,
+  Eye,
+  Layers,
 } from "lucide-react";
 import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
@@ -158,8 +160,29 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: T
             </div>
           )}
 
+          {(task.epic || task.sprint) && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {task.epic && (
+                <span className="chip bg-violet-500/10 text-violet-600 dark:text-violet-400" title="Эпик">
+                  <Layers className="h-3 w-3" /> {task.epic}
+                </span>
+              )}
+              {task.sprint && <span className="chip bg-surface-2 text-muted" title="Спринт">🏃 {task.sprint}</span>}
+            </div>
+          )}
+
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
             <TypeBadge type={task.type} size="xs" />
+            {task.storyPoints != null && (
+              <span className="chip bg-brand/10 font-semibold text-brand" title="Очки (сложность)">
+                {task.storyPoints}
+              </span>
+            )}
+            {(task.watchers?.length ?? 0) > 0 && (
+              <span className="chip bg-surface-2 text-muted" title="Наблюдатели">
+                <Eye className="h-3 w-3" /> {task.watchers.length}
+              </span>
+            )}
             {blocked && (
               <span className="chip bg-red-500/12 text-red-600 dark:text-red-400" title="Заблокирована другими задачами">
                 <Lock className="h-3 w-3" /> Блок

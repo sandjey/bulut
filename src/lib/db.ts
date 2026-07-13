@@ -26,6 +26,7 @@ interface BoardRow {
   name: string;
   color: string;
   columns: Column[];
+  custom_fields: import("./types").CustomField[] | null;
   position: number;
   created_at: string;
   deleted_at: string | null;
@@ -62,6 +63,11 @@ interface TaskRow {
   map_node_id: string | null;
   parent_id: string | null;
   blocked_by: string[] | null;
+  story_points: number | null;
+  epic: string | null;
+  sprint: string | null;
+  watchers: string[] | null;
+  custom: Record<string, string> | null;
   deleted_at: string | null;
 }
 
@@ -97,6 +103,7 @@ const toBoard = (r: BoardRow): Board => ({
   name: r.name,
   color: r.color,
   columns: r.columns ?? [],
+  customFields: r.custom_fields ?? [],
   createdAt: r.created_at,
   deletedAt: r.deleted_at ?? null,
 });
@@ -131,6 +138,11 @@ const toTask = (r: TaskRow): Task => ({
   mapNodeId: r.map_node_id ?? null,
   parentId: r.parent_id ?? null,
   blockedBy: r.blocked_by ?? [],
+  storyPoints: r.story_points ?? null,
+  epic: r.epic ?? "",
+  sprint: r.sprint ?? "",
+  watchers: r.watchers ?? [],
+  custom: r.custom ?? {},
   deletedAt: r.deleted_at ?? null,
 });
 
@@ -269,6 +281,7 @@ export async function insertBoard(b: Board, userId: string, position: number) {
     name: b.name,
     color: b.color,
     columns: b.columns,
+    custom_fields: b.customFields ?? [],
     position,
     created_at: b.createdAt,
   });
@@ -280,6 +293,7 @@ export async function updateBoardRow(id: string, patch: Partial<Board>) {
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.color !== undefined) row.color = patch.color;
   if (patch.columns !== undefined) row.columns = patch.columns;
+  if (patch.customFields !== undefined) row.custom_fields = patch.customFields;
   const { error } = await client().from("boards").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -344,6 +358,11 @@ export async function updateTaskRow(id: string, patch: Partial<Task>) {
   if (patch.mapNodeId !== undefined) row.map_node_id = patch.mapNodeId;
   if (patch.parentId !== undefined) row.parent_id = patch.parentId;
   if (patch.blockedBy !== undefined) row.blocked_by = patch.blockedBy;
+  if (patch.storyPoints !== undefined) row.story_points = patch.storyPoints;
+  if (patch.epic !== undefined) row.epic = patch.epic;
+  if (patch.sprint !== undefined) row.sprint = patch.sprint;
+  if (patch.watchers !== undefined) row.watchers = patch.watchers;
+  if (patch.custom !== undefined) row.custom = patch.custom;
   const { error } = await client().from("tasks").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -411,6 +430,11 @@ function taskToRow(t: Task, userId: string) {
     map_node_id: t.mapNodeId ?? null,
     parent_id: t.parentId ?? null,
     blocked_by: t.blockedBy ?? [],
+    story_points: t.storyPoints ?? null,
+    epic: t.epic ?? "",
+    sprint: t.sprint ?? "",
+    watchers: t.watchers ?? [],
+    custom: t.custom ?? {},
   };
 }
 
