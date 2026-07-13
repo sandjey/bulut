@@ -66,3 +66,33 @@ export function err(msg: string, status = 400) {
 export function ok(data: unknown, status = 200) {
   return Response.json(data, { status });
 }
+
+export type WorkspaceResult =
+  | { ok: true; workspaceId: string; all: string[] }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Determine which workspace (room) the request operates on.
+ * Priority: `X-Workspace-Id` header → `?workspace=` query → the single
+ * membership of the API account. Verifies membership.
+ */
+export async function resolveWorkspace(db: SupabaseClient, req: NextRequest): Promise<WorkspaceResult> {
+  const explicit = req.headers.get("x-workspace-id") || req.nextUrl.searchParams.get("workspace");
+  const { data, error } = await db.from("workspace_members").select("workspace_id");
+  if (error) return { ok: false, error: error.message, status: 500 };
+  const all = (data ?? []).map((r) => r.workspace_id as string);
+  if (all.length === 0) {
+    return {
+      ok: false,
+      error:
+        "API-аккаунт не состоит ни в одной комнате. Пригласите пользователя (email из BULUT_API_SERVICE_EMAIL) в нужную комнату.",
+      status: 403,
+    };
+  }
+  if (explicit) {
+    if (!all.includes(explicit)) return { ok: false, error: "Нет доступа к этой комнате (workspace)", status: 403 };
+    return { ok: true, workspaceId: explicit, all };
+  }
+  // По умолчанию — первая комната. Если их несколько, укажите X-Workspace-Id.
+  return { ok: true, workspaceId: all[0], all };
+}

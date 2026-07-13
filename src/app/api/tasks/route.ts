@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { authenticate, err, ok } from "@/lib/api-auth";
+import { authenticate, resolveWorkspace, err, ok } from "@/lib/api-auth";
 
 // ─── GET /api/tasks ─────────────────────────────────────────────────────────
 // Query params:
@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
   const auth = await authenticate(req);
   if (!auth.ok) return err(auth.error, auth.status);
   const { db } = auth;
+  const ws = await resolveWorkspace(db, req);
+  if (!ws.ok) return err(ws.error, ws.status);
 
   const q = req.nextUrl.searchParams;
 
@@ -38,7 +40,14 @@ export async function GET(req: NextRequest) {
     : "position";
   const ascending = (q.get("order") ?? "asc") !== "desc";
 
-  let query = db.from("tasks").select("*", { count: "exact" });
+  let query = db
+    .from("tasks")
+    .select("*", { count: "exact" })
+    .eq("workspace_id", ws.workspaceId)
+    .is("deleted_at", null);
+
+  // Подзадачи по умолчанию скрыты; ?subtasks=true — показать
+  if (q.get("subtasks") !== "true") query = query.is("parent_id", null);
 
   // ─── Filters ────────────────────────────────────────────────────────────────
   if (q.get("boardId"))   query = query.eq("board_id",   q.get("boardId")!);
@@ -129,9 +138,9 @@ export async function POST(req: NextRequest) {
   const priority = PRIORITIES.includes(body.priority as string) ? body.priority : "medium";
   const type     = TYPES.includes(body.type as string)          ? body.type     : "task";
 
-  // Validate board exists
+  // Validate board exists (и берём его комнату для workspace_id)
   const { data: board, error: boardErr } = await db
-    .from("boards").select("id,columns").eq("id", boardId).single();
+    .from("boards").select("id,columns,workspace_id").eq("id", boardId).single();
   if (boardErr || !board) return err("Board not found", 404);
 
   // Validate column exists in board
@@ -167,6 +176,7 @@ export async function POST(req: NextRequest) {
   const row = {
     id:               crypto.randomUUID(),
     user_id:          userId === "api-key" ? null : userId,
+    workspace_id:     board.workspace_id,
     board_id:         boardId,
     column_id:        columnId,
     title,
@@ -185,8 +195,11 @@ export async function POST(req: NextRequest) {
     return_count:     0,
     stage_times:      {},
     created_at:       now,
+    created_by:       String(body.assignee ?? "").trim() || "API",
     map_id:           (body.mapId as string | undefined) ?? null,
     map_node_id:      (body.mapNodeId as string | undefined) ?? null,
+    parent_id:        (body.parentId as string | undefined) ?? null,
+    blocked_by:       Array.isArray(body.blockedBy) ? body.blockedBy.map(String) : [],
   };
 
   const { data, error } = await db.from("tasks").insert(row).select().single();

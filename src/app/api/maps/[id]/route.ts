@@ -12,11 +12,24 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .maybeSingle();
   if (error) return err(error.message, 500);
   if (!data) return err("Карта не найдена", 404);
+
+  // Плоский список узлов — чтобы автоматизация знала id узлов для привязки карточек.
+  const graph = (data.graph ?? { nodes: [], edges: [] }) as {
+    nodes?: { id: string; data?: { label?: string; kind?: string } }[];
+    edges?: { source: string; target: string }[];
+  };
+  const nodes = (graph.nodes ?? []).map((n) => ({
+    id: n.id,
+    label: n.data?.label ?? "",
+    kind: n.data?.kind ?? "",
+  }));
+
   return ok({
     id: data.id,
     name: data.name,
     color: data.color,
-    graph: data.graph,
+    nodes, // [{ id, label, kind }] — используйте id как mapNodeId при создании задачи
+    graph: data.graph, // полный граф (узлы + связи), если нужен
     updatedAt: data.updated_at,
   });
 }
