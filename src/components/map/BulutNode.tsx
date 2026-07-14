@@ -248,7 +248,7 @@ function StatusCaption({ stats, override }: { stats: NodeStats; override?: "ok" 
   return (
     <div className="pointer-events-none absolute left-1/2 top-full z-[5] mt-1.5 w-[94%] -translate-x-1/2">
       <div
-        className="rounded-md px-2 py-1 text-[10px] shadow-sm backdrop-blur-sm"
+        className="rounded-md px-2 py-1 text-[10px] shadow-sm"
         style={{ background: withAlpha(m.color, 0.14), border: `1px solid ${withAlpha(m.color, 0.4)}` }}
       >
         <div className="flex items-center gap-1.5 font-bold" style={{ color: m.color }}>
@@ -451,7 +451,7 @@ function BulutNodeInner({ id, data, selected }: NodeProps<MapNode>) {
       {isSelected && toolbar}
       <div
         className={cn(
-          "bulut-node group relative flex w-full flex-col items-center justify-center gap-1.5 border px-3.5 py-3 text-center backdrop-blur-sm",
+          "bulut-node group relative flex w-full flex-col items-center justify-center gap-1.5 border px-3.5 py-3 text-center",
           terminator ? "min-h-[52px] rounded-full" : "min-h-[70px] rounded-2xl",
           isSelected && "ring-2 ring-brand",
           dim,
@@ -539,7 +539,7 @@ function LinkNode({
   return (
     <div
       className={cn(
-        "bulut-node relative flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center backdrop-blur-sm",
+        "bulut-node relative flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border px-3 py-3 text-center",
         selected && "ring-2 ring-brand",
         dim,
         animClass,

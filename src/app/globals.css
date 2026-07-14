@@ -554,3 +554,10 @@ body {
   50%      { filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.85)); }
 }
 .bulut-glow { animation: bulutGlow 1.8s ease-in-out infinite; }
+
+/* Слабые устройства / reduced-motion: отключаем тяжёлые анимации карты */
+@media (prefers-reduced-motion: reduce) {
+  .bulut-node { animation: none !important; transition: none !important; }
+  .bulut-node:hover { transform: none !important; }
+  .bulut-float, .bulut-glow, .bulut-pulse { animation: none !important; }
+}

@@ -34,22 +34,89 @@ export const STATUS_META: Record<NodeStatus, { color: string; label: string }> =
 };
 
 /**
- * Этап задачи в «зоне тестирования» (Готов к тестированию / На проверке и позже,
- * но НЕ «Готово»). По умолчанию доска: …, Готов к тестированию, На проверке, Готово —
- * «зона» начинается с третьей колонки с конца.
+ * Индекс для быстрого расчёта статусов: строится ОДИН раз на (tasks, boards, mapId),
+ * а не заново для каждого узла. На больших картах это убирает лаги.
  */
-function isInTestingZone(task: Task, boards: Board[]): boolean {
-  const board = boards.find((b) => b.id === task.boardId);
-  const cols = board?.columns ?? [];
-  const idx = cols.findIndex((c) => c.id === task.columnId);
-  if (idx < 0) return false;
-  const readyIdx = cols.length - 3; // «Готов к тестированию»
-  return readyIdx >= 1 && idx >= readyIdx;
+export interface StatsIndex {
+  byNode: Map<string, Task[]>; // задачи узла по mapNodeId
+  colName: Map<string, string>; // columnId → название этапа
+  colZone: Map<string, boolean>; // columnId → в «зоне тестирования»
+}
+
+export function buildStatsIndex(tasks: Task[], boards: Board[], mapId: string | null | undefined): StatsIndex {
+  const byNode = new Map<string, Task[]>();
+  if (mapId) {
+    for (const t of tasks) {
+      if (t.mapId === mapId && t.mapNodeId) {
+        const arr = byNode.get(t.mapNodeId);
+        if (arr) arr.push(t);
+        else byNode.set(t.mapNodeId, [t]);
+      }
+    }
+  }
+  const colName = new Map<string, string>();
+  const colZone = new Map<string, boolean>();
+  for (const b of boards) {
+    const cols = b.columns ?? [];
+    const readyIdx = cols.length - 3; // «Готов к тестированию» и позже
+    cols.forEach((c, i) => {
+      colName.set(c.id, c.name);
+      colZone.set(c.id, readyIdx >= 1 && i >= readyIdx);
+    });
+  }
+  return { byNode, colName, colZone };
+}
+
+const EMPTY_INDEX: StatsIndex = { byNode: new Map(), colName: new Map(), colZone: new Map() };
+
+/** Расчёт статуса узла по готовому индексу — O(число задач узла). */
+export function statsFromIndex(index: StatsIndex, nodeId: string | null | undefined, override?: StatusOverride): NodeStats {
+  const linked = (nodeId && index.byNode.get(nodeId)) || [];
+
+  let done = 0;
+  let bugsFixed = 0;
+  let bugsOpenActiveBugs = 0;
+  let returns = 0;
+  const stageMap = new Map<string, number>();
+  for (const t of linked) {
+    if (t.status === "done") done++;
+    else if (t.type === "bug") {
+      if (index.colZone.get(t.columnId)) bugsFixed++;
+      else bugsOpenActiveBugs++;
+    }
+    returns += t.returnCount ?? 0;
+    const name = index.colName.get(t.columnId) || "—";
+    stageMap.set(name, (stageMap.get(name) ?? 0) + 1);
+  }
+  const active = linked.length - done;
+  const bugsOpen = bugsOpenActiveBugs;
+  const byStage = Array.from(stageMap, ([name, count]) => ({ name, count }));
+
+  let auto: NodeStatus;
+  if (bugsOpen > 0) auto = "bug";
+  else if (bugsFixed > 0) auto = "fixed";
+  else if (active > 0) auto = "wip";
+  else auto = "ok";
+
+  return {
+    total: linked.length,
+    active,
+    done,
+    bugsOpen,
+    bugsFixed,
+    returns,
+    byStage,
+    auto,
+    status: override ?? auto,
+    overridden: !!override,
+    isEmpty: linked.length === 0,
+    tasks: linked,
+  };
 }
 
 /**
- * Считает статус узла из привязанных задач. Полностью null-safe:
- * если карта/узел/поля пустые — вернёт «пусто», без падений.
+ * Считает статус узла из привязанных задач (совместимость: строит индекс сам).
+ * Для множества узлов используйте buildStatsIndex + statsFromIndex.
  */
 export function computeNodeStats(
   tasks: Task[],
@@ -58,50 +125,6 @@ export function computeNodeStats(
   nodeId: string | null | undefined,
   override?: StatusOverride,
 ): NodeStats {
-  const linked =
-    mapId && nodeId
-      ? tasks.filter((t) => t.mapId === mapId && t.mapNodeId === nodeId)
-      : [];
-
-  const done = linked.filter((t) => t.status === "done");
-  const active = linked.filter((t) => t.status !== "done");
-  const activeBugs = active.filter((t) => t.type === "bug");
-  // баг «исправлен, на проверке» — уже в зоне тестирования; иначе «в работе» (красный)
-  const bugsFixed = activeBugs.filter((t) => isInTestingZone(t, boards)).length;
-  const bugsOpen = activeBugs.length - bugsFixed;
-  const returns = linked.reduce((s, t) => s + (t.returnCount ?? 0), 0);
-
-  const colName = new Map<string, string>();
-  for (const b of boards) for (const c of b.columns ?? []) colName.set(c.id, c.name);
-  const stageMap = new Map<string, number>();
-  for (const t of linked) {
-    const name = colName.get(t.columnId) || "—";
-    stageMap.set(name, (stageMap.get(name) ?? 0) + 1);
-  }
-  const byStage = Array.from(stageMap, ([name, count]) => ({ name, count }));
-
-  // Приоритет: открытый баг (красный) → исправленный на проверке (синий) →
-  // прочая работа (жёлтый) → всё готово/пусто (зелёный).
-  let auto: NodeStatus;
-  if (bugsOpen > 0) auto = "bug";
-  else if (bugsFixed > 0) auto = "fixed";
-  else if (active.length > 0) auto = "wip";
-  else auto = "ok";
-
-  const status: NodeStatus = override ?? auto;
-
-  return {
-    total: linked.length,
-    active: active.length,
-    done: done.length,
-    bugsOpen,
-    bugsFixed,
-    returns,
-    byStage,
-    auto,
-    status,
-    overridden: !!override,
-    isEmpty: linked.length === 0,
-    tasks: linked,
-  };
+  if (!mapId || !nodeId) return statsFromIndex(EMPTY_INDEX, null, override);
+  return statsFromIndex(buildStatsIndex(tasks, boards, mapId), nodeId, override);
 }

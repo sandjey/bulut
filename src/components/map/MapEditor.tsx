@@ -50,7 +50,7 @@ import { useStore } from "@/lib/store";
 import { useRouter, useSearchParams } from "next/navigation";
 import { nodeTypes } from "./BulutNode";
 import { MapContext, useMapId, useNodeStats, type MapFilter } from "./MapContext";
-import { STATUS_META, computeNodeStats, type StatusOverride } from "@/lib/map-stats";
+import { STATUS_META, buildStatsIndex, statsFromIndex, type StatusOverride } from "@/lib/map-stats";
 import { tidyInPlace, resolveOverlaps, exportPng, exportJson, parseImport } from "./mapUtils";
 import {
   NODE_KINDS,
@@ -122,7 +122,9 @@ export function MapEditor({ map }: { map: ProjectMap }) {
 
 function EditorInner({ map }: { map: ProjectMap }) {
   const { renameMap, setMapColor, saveGraph } = useMaps();
-  const { tasks: mapTasks } = useStore();
+  const { tasks: mapTasks, boards: mapBoards } = useStore();
+  // Один индекс статусов на всю карту (а не пересчёт для каждого узла) — плавность на слабых ПК.
+  const statsIndex = useMemo(() => buildStatsIndex(mapTasks, mapBoards, map.id), [mapTasks, mapBoards, map.id]);
   const canEdit = useCan()("map.edit");
 
   const [nodes, setNodes, onNodesChange] = useNodesState<MapNode>((map.graph.nodes ?? []).map(withSize));
@@ -447,7 +449,7 @@ function EditorInner({ map }: { map: ProjectMap }) {
   };
 
   return (
-    <MapContext.Provider value={{ mapId: map.id, filter }}>
+    <MapContext.Provider value={{ mapId: map.id, filter, index: statsIndex }}>
     <div className="bulut-map-root flex h-full flex-col bg-bg">
       {/* Toolbar */}
       <div className="z-10 flex flex-wrap items-center gap-2 border-b border-border bg-surface/80 px-3 py-2 backdrop-blur">
@@ -672,6 +674,7 @@ function HealthStrip({
 }) {
   const { tasks, boards } = useStore();
   const agg = useMemo(() => {
+    const index = buildStatsIndex(tasks, boards, mapId);
     const c = { ok: 0, wip: 0, bug: 0, fixed: 0, empty: 0 };
     let totalTasks = 0;
     let totalBugs = 0;
@@ -680,7 +683,7 @@ function HealthStrip({
       const kind = n.data?.kind;
       if (kind === "note" || kind === "group") continue;
       taskNodes++;
-      const s = computeNodeStats(tasks, boards, mapId, n.id, n.data?.statusOverride);
+      const s = statsFromIndex(index, n.id, n.data?.statusOverride);
       c[s.status] += 1;
       if (s.isEmpty) c.empty += 1;
       totalTasks += s.total;

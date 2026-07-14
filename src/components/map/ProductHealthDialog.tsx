@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, ExternalLink } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { useStore } from "@/lib/store";
-import { computeNodeStats, STATUS_META, type NodeStatus } from "@/lib/map-stats";
+import { buildStatsIndex, statsFromIndex, STATUS_META, type NodeStatus } from "@/lib/map-stats";
 import type { MapNode } from "@/lib/map-types";
 import { cn } from "@/lib/utils";
 
@@ -30,12 +30,13 @@ export function ProductHealthDialog({
   const [busy, setBusy] = useState(false);
 
   const rows = useMemo(() => {
+    const index = buildStatsIndex(tasks, boards, mapId);
     return nodes
       .filter((n) => n.data?.kind === "screen")
       .map((n) => ({
         node: n,
         label: (n.data?.label as string) || "Экран",
-        stats: computeNodeStats(tasks, boards, mapId, n.id, n.data?.statusOverride),
+        stats: statsFromIndex(index, n.id, n.data?.statusOverride),
       }))
       .sort((a, b) => SEV[b.stats.status] - SEV[a.stats.status] || a.label.localeCompare(b.label, "ru"));
   }, [nodes, tasks, boards, mapId]);

@@ -1,15 +1,17 @@
 "use client";
 
 import { createContext, useContext, useMemo } from "react";
-import { useStore } from "@/lib/store";
-import { computeNodeStats, type StatusOverride, type NodeStats } from "@/lib/map-stats";
+import { statsFromIndex, buildStatsIndex, type StatusOverride, type NodeStats, type StatsIndex } from "@/lib/map-stats";
 
 export type MapFilter = "all" | "bug" | "fixed" | "work" | "empty" | "ok";
 
-/** Контекст текущей карты — mapId для агрегации задач + активный фильтр подсветки. */
-export const MapContext = createContext<{ mapId: string | null; filter: MapFilter }>({
+const EMPTY_INDEX = buildStatsIndex([], [], null);
+
+/** Контекст текущей карты — mapId + фильтр + предрасчитанный индекс статусов. */
+export const MapContext = createContext<{ mapId: string | null; filter: MapFilter; index: StatsIndex }>({
   mapId: null,
   filter: "all",
+  index: EMPTY_INDEX,
 });
 
 export function useMapId(): string | null {
@@ -20,12 +22,8 @@ export function useMapFilter(): MapFilter {
   return useContext(MapContext).filter;
 }
 
-/** Статистика узла по привязанным задачам (реалтайм из стора). */
+/** Статистика узла — из общего индекса (быстро, без пересчёта всех задач на каждый узел). */
 export function useNodeStats(nodeId: string, override?: StatusOverride): NodeStats {
-  const mapId = useMapId();
-  const { tasks, boards } = useStore();
-  return useMemo(
-    () => computeNodeStats(tasks, boards, mapId, nodeId, override),
-    [tasks, boards, mapId, nodeId, override],
-  );
+  const { index } = useContext(MapContext);
+  return useMemo(() => statsFromIndex(index, nodeId, override), [index, nodeId, override]);
 }
