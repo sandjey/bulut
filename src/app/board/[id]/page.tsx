@@ -63,8 +63,11 @@ function BoardPageInner() {
   const permEdit = can("card.edit");
   const permStatus = can("card.status");
   const canExport = can("reports.export");
-  // Режим редактирования (по умолчанию — просмотр). Права действуют только в нём.
+  // Режим редактирования. По умолчанию включён у тех, у кого есть права (drag
+  // работает сразу), у остальных — просмотр. Явный выбор запоминается. Права
+  // действуют только в режиме редактирования.
   const [editMode, setEditMode] = useState(false);
+  const [editChoiceMade, setEditChoiceMade] = useState(false);
   const canAnyEdit = permManage || permCreate || permMove || permEdit || permStatus;
   const canManage = permManage && editMode;
   const canCreate = permCreate && editMode;
@@ -89,11 +92,20 @@ function BoardPageInner() {
     if (v === "list" || v === "calendar" || v === "board" || v === "timeline") setView(v);
     const g = localStorage.getItem("bulut.groupBy") as GroupKey | null;
     if (g && ["none", "assignee", "priority", "epic", "sprint"].includes(g)) setGroupBy(g);
-    setEditMode(localStorage.getItem("bulut.boardEdit") === "1");
+    const savedEdit = localStorage.getItem("bulut.boardEdit");
+    if (savedEdit === "1" || savedEdit === "0") {
+      setEditMode(savedEdit === "1");
+      setEditChoiceMade(true);
+    }
   }, []);
+  // Пока пользователь сам не переключил режим — по умолчанию редактирование для тех, у кого есть права.
+  useEffect(() => {
+    if (!editChoiceMade) setEditMode(canAnyEdit);
+  }, [canAnyEdit, editChoiceMade]);
   const toggleEdit = () =>
     setEditMode((v) => {
       const n = !v;
+      setEditChoiceMade(true);
       localStorage.setItem("bulut.boardEdit", n ? "1" : "0");
       return n;
     });
