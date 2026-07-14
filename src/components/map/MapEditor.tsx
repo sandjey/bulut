@@ -618,6 +618,10 @@ function EditorInner({ map }: { map: ProjectMap }) {
             onClose={() => setSelEdgeId(null)}
           />
         )}
+        {/* Просмотр без прав редактирования: клик по экрану → его задачи/баги */}
+        {!canEdit && selectedNode && selectedNode.data.kind !== "note" && selectedNode.data.kind !== "group" && (
+          <NodeViewer key={selectedNode.id} node={selectedNode} onClose={() => setSelNodeId(null)} />
+        )}
       </div>
     </div>
     </MapContext.Provider>
@@ -762,6 +766,56 @@ const ANIM_OPTIONS: { key: NodeAnim; label: string }[] = [
   { key: "float", label: "Парение" },
   { key: "glow", label: "Свет" },
 ];
+
+/** Просмотровая панель узла (для права «Просмотр карт» без редактирования). */
+function NodeViewer({ node, onClose }: { node: MapNode; onClose: () => void }) {
+  const stats = useNodeStats(node.id, node.data.statusOverride);
+  const { boards } = useStore();
+  const router = useRouter();
+  const meta = STATUS_META[stats.status];
+  const label = (node.data.label as string) || NODE_KIND_META[node.data.kind]?.label || "Экран";
+  return (
+    <div className="absolute right-3 top-3 z-10 w-[280px] rounded-2xl border border-border bg-surface/95 p-3 shadow-md backdrop-blur">
+      <div className="mb-1 flex items-start justify-between gap-2">
+        <span className="text-sm font-semibold leading-snug">{label}</span>
+        <button onClick={onClose} className="rounded p-1 text-muted hover:text-fg"><X className="h-4 w-4" /></button>
+      </div>
+      {node.data.description ? (
+        <p className="mb-2 whitespace-pre-wrap text-xs text-muted">{node.data.description as string}</p>
+      ) : null}
+
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="inline-flex items-center gap-1 font-semibold" style={{ color: meta.color }}>
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: meta.color }} /> {meta.label}
+        </span>
+        <span className="text-muted">задач: <b className="text-fg">{stats.total}</b></span>
+        {stats.bugsOpen > 0 && <span className="text-red-500">багов: {stats.bugsOpen}</span>}
+        <span className="ml-auto text-muted">готово: {stats.done}/{stats.total}</span>
+      </div>
+
+      <div className="max-h-56 space-y-1 overflow-y-auto">
+        {stats.tasks.length === 0 && <p className="py-1 text-[11px] text-faint">На этом экране пока нет задач</p>}
+        {stats.tasks.map((t) => {
+          const b = boards.find((x) => x.id === t.boardId);
+          const col = b?.columns.find((c) => c.id === t.columnId);
+          const dot = t.type === "bug" && t.status !== "done" ? "#ef4444" : t.status === "done" ? "#10b981" : "#f59e0b";
+          return (
+            <button
+              key={t.id}
+              onClick={() => router.push(`/board/${t.boardId}?task=${t.id}`)}
+              className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1 text-left text-xs transition hover:bg-surface-2"
+              title="Открыть на доске"
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} />
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              <span className="shrink-0 text-[9px] text-faint">{col?.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function NodeInspector({
   node,
