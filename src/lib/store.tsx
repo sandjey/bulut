@@ -245,6 +245,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
   const dataRef = useRef<AppData>(EMPTY);
+  // Сколько наших записей «в полёте» — пока > 0, не перезагружаем данные с сервера,
+  // чтобы чужое realtime-событие не затёрло наши оптимистичные изменения.
+  const pending = useRef(0);
 
   const EMPTY_TRASH: TrashData = useMemo(() => ({ boards: [], tasks: [], journal: [] }), []);
   const [trash, setTrash] = useState<TrashData>({ boards: [], tasks: [], journal: [] });
@@ -326,14 +329,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const sb = getSupabase();
     if (!sb) return;
 
-    // Debounce refetch to avoid flooding when many rows change at once
+    // Debounce refetch to avoid flooding when many rows change at once.
+    // Если у нас есть незавершённые записи — ждём, чтобы не затереть их чужим событием.
     let timer: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefetch = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
+      const run = () => {
+        if (pending.current > 0) {
+          timer = setTimeout(run, 250);
+          return;
+        }
         db.fetchAll(userId).then(apply).catch(console.error);
         refreshTrash();
-      }, 300);
+      };
+      timer = setTimeout(run, 300);
     };
 
     const channel = sb
@@ -353,9 +362,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(
     (p: Promise<unknown>) => {
-      p.catch((e) => {
-        console.error("Ошибка синхронизации", e);
-        refetch();
+      pending.current++;
+      p.then(
+        () => {},
+        (e) => {
+          console.error("Ошибка синхронизации", e);
+          refetch();
+        },
+      ).finally(() => {
+        pending.current = Math.max(0, pending.current - 1);
       });
     },
     [refetch]
