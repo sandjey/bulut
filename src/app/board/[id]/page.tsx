@@ -4,7 +4,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
-import { Plus, Download, ArrowLeft, Pencil, Check, Columns3, List as ListIcon, CalendarDays, GanttChartSquare } from "lucide-react";
+import { Plus, Download, ArrowLeft, Pencil, Check, Columns3, List as ListIcon, CalendarDays, GanttChartSquare, Eye } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { BoardColumn } from "@/components/BoardColumn";
@@ -55,10 +56,19 @@ function BoardPageInner() {
 
   const { boards, tasks, moveTask, addColumn, updateBoard, createTask, updateTask } = useStore();
   const can = useCan();
-  const canManage = can("board.manage");
-  const canCreate = can("card.create");
-  const canMove = can("card.move");
+  // Права по разрешениям
+  const permManage = can("board.manage");
+  const permCreate = can("card.create");
+  const permMove = can("card.move");
+  const permEdit = can("card.edit");
+  const permStatus = can("card.status");
   const canExport = can("reports.export");
+  // Режим редактирования (по умолчанию — просмотр). Права действуют только в нём.
+  const [editMode, setEditMode] = useState(false);
+  const canAnyEdit = permManage || permCreate || permMove || permEdit || permStatus;
+  const canManage = permManage && editMode;
+  const canCreate = permCreate && editMode;
+  const canMove = permMove && editMode;
   const board = boards.find((b) => b.id === boardId);
 
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -79,7 +89,14 @@ function BoardPageInner() {
     if (v === "list" || v === "calendar" || v === "board" || v === "timeline") setView(v);
     const g = localStorage.getItem("bulut.groupBy") as GroupKey | null;
     if (g && ["none", "assignee", "priority", "epic", "sprint"].includes(g)) setGroupBy(g);
+    setEditMode(localStorage.getItem("bulut.boardEdit") === "1");
   }, []);
+  const toggleEdit = () =>
+    setEditMode((v) => {
+      const n = !v;
+      localStorage.setItem("bulut.boardEdit", n ? "1" : "0");
+      return n;
+    });
   const changeView = (v: "board" | "list" | "calendar" | "timeline") => {
     setView(v);
     localStorage.setItem("bulut.boardView", v);
@@ -304,6 +321,22 @@ function BoardPageInner() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Режим просмотра / редактирования — защита от случайных изменений */}
+            {canAnyEdit && (
+              <button
+                onClick={toggleEdit}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition",
+                  editMode
+                    ? "border-brand bg-brand/10 text-brand"
+                    : "border-border text-muted hover:bg-surface-2 hover:text-fg",
+                )}
+                title={editMode ? "Редактирование включено — клик, чтобы вернуть просмотр" : "Только просмотр — клик, чтобы редактировать"}
+              >
+                {editMode ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                <span className="hidden sm:inline">{editMode ? "Редактирование" : "Просмотр"}</span>
+              </button>
+            )}
             {/* Переключатель вида — один компактный сегмент */}
             <div className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-2/50 p-0.5">
               {([
@@ -381,6 +414,7 @@ function BoardPageInner() {
               columnId={col.id}
               columnName={col.name}
               tasks={tasksByColumn(col.id)}
+              editMode={editMode}
               onAddTask={openCreate}
               onQuickAdd={(colId, title) =>
                 createTask({ boardId: board.id, columnId: colId, title })
@@ -441,6 +475,7 @@ function BoardPageInner() {
                       tasks={tasksByColumn(col.id).filter((t) => groupValue(t) === lane.key)}
                       droppableId={`${lane.key}${SWIM_SEP}${col.id}`}
                       compact
+                      editMode={editMode}
                       onAddTask={openCreate}
                       onQuickAdd={(colId, title) =>
                         createTask({ boardId: board.id, columnId: colId, title, ...laneExtra(lane.key) })
@@ -463,6 +498,7 @@ function BoardPageInner() {
         board={board}
         task={editingTask}
         defaultColumnId={defaultCol}
+        viewOnly={!editMode}
       />
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} defaultBoardId={board.id} />
       <BoardSettingsDialog board={board} open={settingsOpen} onClose={() => setSettingsOpen(false)} />

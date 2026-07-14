@@ -109,16 +109,18 @@ interface TaskModalProps {
   task?: Task | null;
   /** default column when creating */
   defaultColumnId?: string;
+  /** доска в режиме просмотра — карточка открывается только для чтения */
+  viewOnly?: boolean;
 }
 
-export function TaskModal({ open, onClose, board, task, defaultColumnId }: TaskModalProps) {
+export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnly = false }: TaskModalProps) {
   const { tasks, createTask, updateTask, deleteTask } = useStore();
   const notify = useNotifier();
   const can = useCan();
   const editing = !!task;
-  const canEdit = can("card.edit");
-  const canCreate = can("card.create");
-  const canDelete = can("card.delete");
+  const canEdit = can("card.edit") && !viewOnly;
+  const canCreate = can("card.create") && !viewOnly;
+  const canDelete = can("card.delete") && !viewOnly;
   // В режиме редактирования поля доступны при праве card.edit; при создании — card.create.
   const fieldsDisabled = editing ? !canEdit : !canCreate;
   const canSave = editing ? canEdit : canCreate;

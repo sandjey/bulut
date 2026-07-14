@@ -19,6 +19,7 @@ interface BoardColumnProps {
   onOpenTask: (task: Task) => void;
   droppableId?: string; // для дорожек (swimlanes) — уникальный id зоны
   compact?: boolean; // в дорожках шапка компактнее
+  editMode?: boolean; // редактирование включено (иначе только просмотр)
 }
 
 export function BoardColumn({
@@ -31,10 +32,11 @@ export function BoardColumn({
   onOpenTask,
   droppableId,
   compact,
+  editMode = true,
 }: BoardColumnProps) {
   const { renameColumn, deleteColumn, updateBoard } = useStore();
   const can = useCan();
-  const canManage = can("board.manage");
+  const canManage = can("board.manage") && editMode;
   const wip = board.columns.find((c) => c.id === columnId)?.wip ?? 0;
   const overWip = wip > 0 && tasks.length > wip;
   const setWip = () => {
@@ -47,8 +49,8 @@ export function BoardColumn({
     updateBoard(board.id, { columns });
     setMenuOpen(false);
   };
-  const canCreate = can("card.create");
-  const canMove = can("card.move");
+  const canCreate = can("card.create") && editMode;
+  const canMove = can("card.move") && editMode;
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(columnName);
@@ -176,6 +178,7 @@ export function BoardColumn({
                     <TaskCard
                       task={task}
                       board={board}
+                      editMode={editMode}
                       onOpen={() => onOpenTask(task)}
                       dragHandleProps={dragProvided.dragHandleProps}
                       isDragging={dragSnapshot.isDragging}

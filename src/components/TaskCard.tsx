@@ -36,14 +36,15 @@ interface TaskCardProps {
   onOpen: () => void;
   dragHandleProps?: DraggableProvidedDragHandleProps | null;
   isDragging?: boolean;
+  editMode?: boolean; // редактирование включено (иначе только просмотр)
 }
 
-export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging }: TaskCardProps) {
+export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging, editMode = true }: TaskCardProps) {
   const { toggleDone, updateTask, comments, tasks } = useStore();
   const can = useCan();
-  const canEdit = can("card.edit");
-  const canStatus = can("card.status");
-  const canMove = can("card.move");
+  const canEdit = can("card.edit") && editMode;
+  const canStatus = can("card.status") && editMode;
+  const canMove = can("card.move") && editMode;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.title);
   const inputRef = useRef<HTMLTextAreaElement>(null);
