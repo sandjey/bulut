@@ -30,13 +30,14 @@ import {
   loadState,
   saveState,
   defaultState,
-  sanitizeConsoleState,
   buildVarMap,
   buildFinal,
   execute,
   toCurl,
   highlightJson,
   importPostman,
+  importPostmanEnv,
+  requestVars,
   emptyRequest,
   seedBulutCollection,
   kv,
@@ -103,7 +104,6 @@ export default function ConsolePage() {
           flows: r.flows ?? local.flows ?? [],
         };
       }
-      s = sanitizeConsoleState(s); // убрать {{base_url}} из старых сохранённых URL
       setState(s);
       const first = s.collections[0]?.requests[0] ?? s.collections[0]?.folders[0]?.requests[0] ?? null;
       setSelectedId(first?.id ?? null);
@@ -217,8 +217,15 @@ export default function ConsolePage() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const col = importPostman(JSON.parse(String(reader.result)));
-        setState((s) => ({ ...s, collections: [...s.collections, col] }));
+        const json = JSON.parse(String(reader.result));
+        const col = importPostman(json);
+        const env = importPostmanEnv(json); // переменные коллекции → окружение
+        setState((s) => ({
+          ...s,
+          collections: [...s.collections, col],
+          environments: env ? [...s.environments, env] : s.environments,
+          activeEnvId: env ? env.id : s.activeEnvId,
+        }));
       } catch {
         alert("Не удалось разобрать файл. Нужен экспорт Postman Collection (v2.1, JSON).");
       }
@@ -262,6 +269,31 @@ export default function ConsolePage() {
 
   const copyCurl = () => {
     if (final) navigator.clipboard?.writeText(toCurl(final));
+  };
+
+  // управление переменными активного окружения (задать/удалить)
+  const setVar = (name: string, value: string) => {
+    if (!activeEnv) return;
+    setState((s) => ({
+      ...s,
+      environments: s.environments.map((e) => {
+        if (e.id !== activeEnv.id) return e;
+        const exists = e.vars.some((v) => v.key === name);
+        const vars = exists
+          ? e.vars.map((v) => (v.key === name ? { ...v, value, enabled: true } : v))
+          : [...e.vars, kv(name, value)];
+        return { ...e, vars };
+      }),
+    }));
+  };
+  const deleteVar = (name: string) => {
+    if (!activeEnv) return;
+    setState((s) => ({
+      ...s,
+      environments: s.environments.map((e) =>
+        e.id === activeEnv.id ? { ...e, vars: e.vars.filter((v) => v.key !== name) } : e,
+      ),
+    }));
   };
 
   return (
@@ -471,6 +503,7 @@ export default function ConsolePage() {
                     → {final.url}
                   </p>
                 )}
+                <VariablesBar req={current} env={activeEnv} onSet={setVar} onDelete={deleteVar} />
               </div>
 
               {/* вкладки запроса */}
@@ -742,6 +775,108 @@ function EnvEditor({
         Для своего API пишите полный адрес, напр. <span className="font-mono">https://api.site.com/…</span>.
       </p>
       <KVEditor rows={env.vars} onChange={(vars) => onChange({ vars })} kPlaceholder="имя" vPlaceholder="значение" />
+    </div>
+  );
+}
+
+// ─── переменные запроса (задать/удалить прямо здесь) ──────────────────────────────
+const SYSTEM_VARS = new Set(["base_url", "workspace_id", "bulut_token"]);
+function VariablesBar({
+  req,
+  env,
+  onSet,
+  onDelete,
+}: {
+  req: ApiRequest | null;
+  env: Environment | null;
+  onSet: (name: string, value: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const vars = useMemo(() => (req ? requestVars(req) : []), [req]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  if (!req || vars.length === 0) return null;
+
+  const envVal = (n: string) => env?.vars.find((v) => v.key === n && v.enabled)?.value ?? "";
+  const status = (n: string) => {
+    const val = envVal(n);
+    if (val) return { defined: true, text: val };
+    if (SYSTEM_VARS.has(n)) return { defined: true, text: "авто" };
+    return { defined: false, text: "не задана" };
+  };
+  const startEdit = (n: string) => {
+    setEditing(n);
+    setDraft(envVal(n));
+  };
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] text-muted">Переменные:</span>
+        {vars.map((n) => {
+          const st = status(n);
+          return (
+            <button
+              key={n}
+              onClick={() => startEdit(n)}
+              title={st.defined ? `${n} = ${st.text}` : `${n} — не задана, нажмите чтобы задать`}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] transition",
+                editing === n
+                  ? "border-brand bg-brand/10 text-brand"
+                  : st.defined
+                    ? "border-border text-muted hover:border-brand hover:text-brand"
+                    : "border-amber-500/50 bg-amber-500/10 text-amber-600 hover:border-amber-500",
+              )}
+            >
+              {`{{${n}}}`}
+              {!st.defined && <span className="text-[9px] font-bold">!</span>}
+            </button>
+          );
+        })}
+      </div>
+      {editing && (
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface-2/40 p-2">
+          <span className="font-mono text-xs font-semibold text-brand">{`{{${editing}}}`}</span>
+          <span className="text-faint">=</span>
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onSet(editing, draft);
+                setEditing(null);
+              }
+              if (e.key === "Escape") setEditing(null);
+            }}
+            placeholder={SYSTEM_VARS.has(editing) ? "пусто — подставится автоматически" : "значение переменной"}
+            className="input min-w-[180px] flex-1 py-1 font-mono text-xs"
+          />
+          <button
+            onClick={() => {
+              onSet(editing, draft);
+              setEditing(null);
+            }}
+            className="btn-primary py-1 text-xs"
+          >
+            Сохранить
+          </button>
+          <button
+            onClick={() => {
+              onDelete(editing);
+              setEditing(null);
+            }}
+            className="btn-ghost py-1 text-xs text-red-500 hover:bg-red-500/10"
+            title="Удалить переменную из окружения"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => setEditing(null)} className="btn-ghost py-1 text-xs">
+            Отмена
+          </button>
+        </div>
+      )}
     </div>
   );
 }

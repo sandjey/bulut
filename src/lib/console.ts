@@ -618,6 +618,33 @@ export function importPostman(json: unknown): Collection {
   return collection;
 }
 
+/** Переменные коллекции Postman → окружение Bulut (чтобы {{base_url}} и пр. работали). */
+export function importPostmanEnv(json: unknown): Environment | null {
+  const root = json as { info?: { name?: string }; variable?: { key: string; value?: string; disabled?: boolean }[] };
+  const vars = (root.variable ?? []).filter((v) => v.key);
+  if (!vars.length) return null;
+  return {
+    id: uid(),
+    name: `${root.info?.name ?? "Импорт"} — переменные`,
+    vars: vars.map((v) => kv(v.key, v.value ?? "", !v.disabled)),
+  };
+}
+
+/** Все имена {{переменных}} в запросе (включая служебные) — для панели переменных. */
+export function requestVars(req: ApiRequest): string[] {
+  const texts: string[] = [req.url, req.body, req.auth.token ?? "", req.auth.username ?? "", req.auth.password ?? ""];
+  req.headers.filter((h) => h.enabled).forEach((h) => texts.push(h.key, h.value));
+  req.params.filter((p) => p.enabled).forEach((p) => texts.push(p.key, p.value));
+  req.form.filter((f) => f.enabled).forEach((f) => texts.push(f.key, f.value));
+  const set = new Set<string>();
+  texts.forEach((t) => {
+    const re = /\{\{\s*([\w.-]+)\s*\}\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t || ""))) set.add(m[1]);
+  });
+  return [...set];
+}
+
 // ─── встроенная коллекция Bulut API ──────────────────────────────────────────────
 export function seedBulutCollection(): Collection {
   const req = (
@@ -717,28 +744,6 @@ export function defaultState(): ConsoleState {
   };
 }
 
-/** Чистим старые сохранённые URL: убираем {{base_url}} (адрес подставляется сам). */
-function stripBaseUrl(u: string): string {
-  return (u ?? "").replace(/\{\{\s*base_url\s*\}\}/g, "");
-}
-function sanitizeReq(r: ApiRequest): ApiRequest {
-  return r?.url?.includes("base_url") ? { ...r, url: stripBaseUrl(r.url) } : r;
-}
-export function sanitizeConsoleState(s: ConsoleState): ConsoleState {
-  return {
-    ...s,
-    collections: (s.collections ?? []).map((c) => ({
-      ...c,
-      requests: (c.requests ?? []).map(sanitizeReq),
-      folders: (c.folders ?? []).map((f) => ({ ...f, requests: (f.requests ?? []).map(sanitizeReq) })),
-    })),
-    flows: (s.flows ?? []).map((f) => ({
-      ...f,
-      steps: (f.steps ?? []).map((st) => ({ ...st, request: sanitizeReq(st.request) })),
-    })),
-  };
-}
-
 export function loadState(userId: string): ConsoleState {
   if (typeof window === "undefined") return defaultState();
   try {
@@ -748,7 +753,7 @@ export function loadState(userId: string): ConsoleState {
     if (!parsed.collections?.length) parsed.collections = [seedBulutCollection()];
     if (!parsed.environments?.length) return defaultState();
     if (!parsed.flows) parsed.flows = [];
-    return sanitizeConsoleState(parsed);
+    return parsed;
   } catch {
     return defaultState();
   }
