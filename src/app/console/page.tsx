@@ -242,9 +242,6 @@ export default function ConsolePage() {
       alert("Включён режим «Только чтение». Снимите его, чтобы отправлять изменяющие запросы.");
       return;
     }
-    if (isWrite && !window.confirm(`Отправить ${current.method} ${final.url}?\nЭто может изменить данные.`)) {
-      return;
-    }
     setSending(true);
     const res = await execute(final);
     setSending(false);
