@@ -30,6 +30,7 @@ import {
   loadState,
   saveState,
   defaultState,
+  sanitizeConsoleState,
   buildVarMap,
   buildFinal,
   execute,
@@ -102,6 +103,7 @@ export default function ConsolePage() {
           flows: r.flows ?? local.flows ?? [],
         };
       }
+      s = sanitizeConsoleState(s); // убрать {{base_url}} из старых сохранённых URL
       setState(s);
       const first = s.collections[0]?.requests[0] ?? s.collections[0]?.folders[0]?.requests[0] ?? null;
       setSelectedId(first?.id ?? null);
@@ -149,7 +151,12 @@ export default function ConsolePage() {
   const current = useMemo(() => findRequest(state, selectedId), [state, selectedId]);
 
   const varMap = useMemo(
-    () => buildVarMap(activeEnv, { workspace_id: wsId ?? "", bulut_token: token }),
+    () =>
+      buildVarMap(activeEnv, {
+        base_url: typeof window !== "undefined" ? window.location.origin : "",
+        workspace_id: wsId ?? "",
+        bulut_token: token,
+      }),
     [activeEnv, wsId, token],
   );
   const final = useMemo(
@@ -184,7 +191,7 @@ export default function ConsolePage() {
   };
 
   const addRequest = (collectionId: string) => {
-    const req = emptyRequest({ url: "{{base_url}}/api", auth: { type: "bulut" } });
+    const req = emptyRequest({ url: "/api", auth: { type: "bulut" } });
     setState((s) => ({
       ...s,
       collections: s.collections.map((c) =>
@@ -348,7 +355,7 @@ export default function ConsolePage() {
             }))
           }
           onAddEnv={() => {
-            const e = { id: uid(), name: "Новое окружение", vars: [kv("base_url", "")] };
+            const e = { id: uid(), name: "Новое окружение", vars: [kv("", "")] };
             setState((s) => ({ ...s, environments: [...s.environments, e], activeEnvId: e.id }));
           }}
           onDeleteEnv={() =>
@@ -448,7 +455,7 @@ export default function ConsolePage() {
                     value={current.url}
                     onChange={(e) => updateReq(current.id, { url: e.target.value })}
                     className="input flex-1 font-mono text-sm"
-                    placeholder="{{base_url}}/api/tasks"
+                    placeholder="/api/tasks"
                     spellCheck={false}
                   />
                   <button onClick={send} disabled={sending} className="btn-primary shrink-0">
@@ -730,8 +737,9 @@ function EnvEditor({
         </div>
       </div>
       <p className="mb-2 text-[11px] text-faint">
-        Используйте переменные как <span className="font-mono">{"{{base_url}}"}</span> в URL, заголовках и теле. Доступны также{" "}
-        <span className="font-mono">{"{{workspace_id}}"}</span> и <span className="font-mono">{"{{bulut_token}}"}</span>.
+        Здесь можно задать свои значения и вставлять их в URL/заголовки/тело как{" "}
+        <span className="font-mono">{"{{имя}}"}</span>. Адрес сайта и авторизация подставляются сами — их указывать не нужно.
+        Для своего API пишите полный адрес, напр. <span className="font-mono">https://api.site.com/…</span>.
       </p>
       <KVEditor rows={env.vars} onChange={(vars) => onChange({ vars })} kPlaceholder="имя" vPlaceholder="значение" />
     </div>

@@ -237,7 +237,11 @@ function StepFlowEditor({
     }
     setResults({});
     setRunning(true);
-    const base = buildVarMap(activeEnv, { workspace_id: wsId, bulut_token: token });
+    const base = buildVarMap(activeEnv, {
+      base_url: typeof window !== "undefined" ? window.location.origin : "",
+      workspace_id: wsId,
+      bulut_token: token,
+    });
     await runFlow({ ...flow, steps }, base, token, wsId, (stepId, result) => {
       setResults((prev) => ({ ...prev, [stepId]: result }));
     });

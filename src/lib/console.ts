@@ -134,7 +134,7 @@ export function emptyRequest(partial: Partial<ApiRequest> = {}): ApiRequest {
     id: uid(),
     name: partial.name ?? "Новый запрос",
     method: partial.method ?? "GET",
-    url: partial.url ?? "{{base_url}}/api",
+    url: partial.url ?? "/api",
     params: partial.params ?? [],
     headers: partial.headers ?? [],
     auth: partial.auth ?? { type: "bulut" },
@@ -152,14 +152,15 @@ export function resolveVars(input: string, vars: Record<string, string>): string
   );
 }
 
-/** Собрать карту переменных: окружение + служебные (base_url, workspace_id, bulut_token). */
+/** Собрать карту переменных: окружение + служебные (base_url, workspace_id, bulut_token).
+ * Пустые значения окружения НЕ перекрывают служебные (напр. base_url подставляется сам). */
 export function buildVarMap(
   env: Environment | null,
   builtin: Record<string, string>,
 ): Record<string, string> {
   const map: Record<string, string> = { ...builtin };
   env?.vars.forEach((v) => {
-    if (v.enabled && v.key) map[v.key] = v.value;
+    if (v.enabled && v.key && v.value !== "") map[v.key] = v.value;
   });
   return map;
 }
@@ -629,13 +630,13 @@ export function seedBulutCollection(): Collection {
   return {
     id: uid(),
     name: "Bulut API",
-    requests: [req("Живая справка", "GET", "{{base_url}}/api", { auth: { type: "none" } })],
+    requests: [req("Живая справка", "GET", "/api", { auth: { type: "none" } })],
     folders: [
       {
         id: uid(),
         name: "Авторизация",
         requests: [
-          req("Вход → токен", "POST", "{{base_url}}/api/auth/token", {
+          req("Вход → токен", "POST", "/api/auth/token", {
             auth: { type: "none" },
             bodyMode: "json",
             body: `{\n  "email": "you@example.com",\n  "password": "ваш-пароль"\n}`,
@@ -645,14 +646,14 @@ export function seedBulutCollection(): Collection {
       {
         id: uid(),
         name: "Комнаты",
-        requests: [req("Мои комнаты", "GET", "{{base_url}}/api/workspaces")],
+        requests: [req("Мои комнаты", "GET", "/api/workspaces")],
       },
       {
         id: uid(),
         name: "Доски",
         requests: [
-          req("Список досок", "GET", "{{base_url}}/api/boards"),
-          req("Создать доску", "POST", "{{base_url}}/api/boards", {
+          req("Список досок", "GET", "/api/boards"),
+          req("Создать доску", "POST", "/api/boards", {
             bodyMode: "json",
             body: `{\n  "name": "Новая доска"\n}`,
           }),
@@ -662,31 +663,31 @@ export function seedBulutCollection(): Collection {
         id: uid(),
         name: "Задачи",
         requests: [
-          req("Список задач", "GET", "{{base_url}}/api/tasks"),
-          req("Создать задачу", "POST", "{{base_url}}/api/tasks", {
+          req("Список задач", "GET", "/api/tasks"),
+          req("Создать задачу", "POST", "/api/tasks", {
             bodyMode: "json",
             body: `{\n  "boardId": "{{board_id}}",\n  "columnId": "{{column_id}}",\n  "title": "Задача из консоли"\n}`,
           }),
-          req("Задача по id", "GET", "{{base_url}}/api/tasks/{{task_id}}"),
-          req("Изменить/переместить", "PATCH", "{{base_url}}/api/tasks/{{task_id}}", {
+          req("Задача по id", "GET", "/api/tasks/{{task_id}}"),
+          req("Изменить/переместить", "PATCH", "/api/tasks/{{task_id}}", {
             bodyMode: "json",
             body: `{\n  "columnId": "{{column_id}}"\n}`,
           }),
-          req("Удалить задачу", "DELETE", "{{base_url}}/api/tasks/{{task_id}}"),
-          req("Комментарии", "GET", "{{base_url}}/api/tasks/{{task_id}}/comments"),
+          req("Удалить задачу", "DELETE", "/api/tasks/{{task_id}}"),
+          req("Комментарии", "GET", "/api/tasks/{{task_id}}/comments"),
         ],
       },
       {
         id: uid(),
         name: "Журнал",
-        requests: [req("Журнал комнаты", "GET", "{{base_url}}/api/journal")],
+        requests: [req("Журнал комнаты", "GET", "/api/journal")],
       },
       {
         id: uid(),
         name: "Карты",
         requests: [
-          req("Список карт", "GET", "{{base_url}}/api/maps"),
-          req("Карта по id", "GET", "{{base_url}}/api/maps/{{map_id}}"),
+          req("Список карт", "GET", "/api/maps"),
+          req("Карта по id", "GET", "/api/maps/{{map_id}}"),
         ],
       },
     ],
@@ -701,7 +702,6 @@ export function defaultState(): ConsoleState {
     id: uid(),
     name: "Bulut (эта сессия)",
     vars: [
-      kv("base_url", ""),
       kv("board_id", ""),
       kv("column_id", ""),
       kv("task_id", ""),
@@ -717,6 +717,28 @@ export function defaultState(): ConsoleState {
   };
 }
 
+/** Чистим старые сохранённые URL: убираем {{base_url}} (адрес подставляется сам). */
+function stripBaseUrl(u: string): string {
+  return (u ?? "").replace(/\{\{\s*base_url\s*\}\}/g, "");
+}
+function sanitizeReq(r: ApiRequest): ApiRequest {
+  return r?.url?.includes("base_url") ? { ...r, url: stripBaseUrl(r.url) } : r;
+}
+export function sanitizeConsoleState(s: ConsoleState): ConsoleState {
+  return {
+    ...s,
+    collections: (s.collections ?? []).map((c) => ({
+      ...c,
+      requests: (c.requests ?? []).map(sanitizeReq),
+      folders: (c.folders ?? []).map((f) => ({ ...f, requests: (f.requests ?? []).map(sanitizeReq) })),
+    })),
+    flows: (s.flows ?? []).map((f) => ({
+      ...f,
+      steps: (f.steps ?? []).map((st) => ({ ...st, request: sanitizeReq(st.request) })),
+    })),
+  };
+}
+
 export function loadState(userId: string): ConsoleState {
   if (typeof window === "undefined") return defaultState();
   try {
@@ -726,7 +748,7 @@ export function loadState(userId: string): ConsoleState {
     if (!parsed.collections?.length) parsed.collections = [seedBulutCollection()];
     if (!parsed.environments?.length) return defaultState();
     if (!parsed.flows) parsed.flows = [];
-    return parsed;
+    return sanitizeConsoleState(parsed);
   } catch {
     return defaultState();
   }
