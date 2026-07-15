@@ -86,13 +86,31 @@ export interface FlowNode {
   x: number;
   y: number;
   request: ApiRequest;
-  extract: ExtractRule[];
+  extract?: ExtractRule[]; // устар. (маппинг переехал на стрелки) — для совместимости
+}
+
+/** Что передать из ответа предыдущего блока в переменную. */
+export interface EdgeMapping {
+  id: string;
+  from: string; // путь в ответе источника: access_token / data.0.id
+  to: string; // имя переменной: token
+}
+
+export type CondOp = "always" | "exists" | "notExists" | "eq" | "ne" | "contains" | "gt" | "lt";
+
+/** Условие перехода по стрелке. */
+export interface EdgeCondition {
+  left: string; // путь в ответе источника или {{переменная}}
+  op: CondOp;
+  right: string; // значение для сравнения (может содержать {{переменные}})
 }
 
 export interface FlowEdge {
   id: string;
   source: string;
   target: string;
+  mappings: EdgeMapping[]; // что передать дальше
+  condition?: EdgeCondition; // когда переходить (по умолчанию — всегда)
 }
 
 export interface Flow {
@@ -335,10 +353,48 @@ export function topoOrder(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
   return order;
 }
 
+/** Значение слева в условии: путь в ответе или {{переменная}}. */
+function condLeft(left: string, parsed: unknown, vars: Record<string, string>): unknown {
+  if (!left) return undefined;
+  if (left.includes("{{")) return resolveVars(left, vars);
+  return getByPath(parsed, left);
+}
+
+/** Проверка условия перехода. Пустое/always — всегда true. */
+export function evalCondition(
+  cond: EdgeCondition | undefined,
+  parsed: unknown,
+  vars: Record<string, string>,
+): boolean {
+  if (!cond || cond.op === "always") return true;
+  const leftRaw = condLeft(cond.left, parsed, vars);
+  const l = toStringVal(leftRaw);
+  const r = resolveVars(cond.right ?? "", vars);
+  switch (cond.op) {
+    case "exists":
+      return leftRaw !== undefined && leftRaw !== null && l !== "";
+    case "notExists":
+      return leftRaw === undefined || leftRaw === null || l === "";
+    case "eq":
+      return l === r;
+    case "ne":
+      return l !== r;
+    case "contains":
+      return l.includes(r);
+    case "gt":
+      return parseFloat(l) > parseFloat(r);
+    case "lt":
+      return parseFloat(l) < parseFloat(r);
+    default:
+      return true;
+  }
+}
+
 /**
- * Запуск потока: блоки по стрелкам, переменные копятся между блоками.
- * onProgress вызывается при старте и завершении каждого блока.
- * Возвращает итоговую карту переменных.
+ * Запуск потока: блоки идут по стрелкам. На каждой стрелке — маппинг (что
+ * передать из ответа в переменные) и условие (переходить ли). Блок выполняется,
+ * если он корневой ИЛИ активна хотя бы одна входящая стрелка. Так получаются
+ * цепочки и ветвления. Переменные копятся между блоками.
  */
 export async function runFlow(
   flow: Flow,
@@ -349,27 +405,42 @@ export async function runFlow(
 ): Promise<Record<string, string>> {
   const vars: Record<string, string> = { ...baseVars };
   const order = topoOrder(flow.nodes, flow.edges);
+  const activeEdge = new Set<string>();
+
   for (const node of order) {
+    const incoming = flow.edges.filter((e) => e.target === node.id);
+    const reachable = incoming.length === 0 || incoming.some((e) => activeEdge.has(e.id));
+    if (!reachable) {
+      onProgress(node.id, { status: "skipped" });
+      continue;
+    }
+
     const final = buildFinal(node.request, vars, token, wsId);
     onProgress(node.id, { status: "running", sent: final });
     const res = await execute(final);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      parsed = undefined;
+    }
+
+    // исходящие стрелки: условие → маппинг → активируем
     const passed: Record<string, string> = {};
     if (res.ok) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(res.body);
-      } catch {
-        parsed = undefined;
+      for (const e of flow.edges.filter((e) => e.source === node.id)) {
+        if (!evalCondition(e.condition, parsed, vars)) continue;
+        (e.mappings ?? []).forEach((m) => {
+          if (!m.to) return;
+          const val = toStringVal(getByPath(parsed, m.from));
+          vars[m.to] = val;
+          passed[m.to] = val;
+        });
+        activeEdge.add(e.id);
       }
-      node.extract.forEach((rule) => {
-        if (!rule.varName) return;
-        const val = toStringVal(getByPath(parsed, rule.path));
-        vars[rule.varName] = val;
-        passed[rule.varName] = val;
-      });
     }
     onProgress(node.id, { status: res.ok ? "ok" : "error", sent: final, response: res, passed });
-    if (!res.ok) break; // на ошибке останавливаем поток
   }
   return vars;
 }
