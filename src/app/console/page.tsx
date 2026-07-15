@@ -227,7 +227,7 @@ export default function ConsolePage() {
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2 text-sm font-bold">
           <TerminalSquare className="h-5 w-5 text-brand" />
-          Консоль API
+          Bulut API
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
