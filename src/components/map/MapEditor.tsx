@@ -62,7 +62,7 @@ import {
   type NodeAnim,
   type ProjectMap,
 } from "@/lib/map-types";
-import { BOARD_COLORS, type TaskType } from "@/lib/types";
+import { BOARD_COLORS, type TaskType, type Task } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function uid(): string {
@@ -775,6 +775,7 @@ function NodeViewer({ node, onClose }: { node: MapNode; onClose: () => void }) {
   const stats = useNodeStats(node.id, node.data.statusOverride);
   const { boards } = useStore();
   const router = useRouter();
+  const stageBreakdown = useStageBreakdown(stats.tasks, boards);
   const meta = STATUS_META[stats.status];
   const label = (node.data.label as string) || NODE_KIND_META[node.data.kind]?.label || "Экран";
   return (
@@ -796,7 +797,9 @@ function NodeViewer({ node, onClose }: { node: MapNode; onClose: () => void }) {
         <span className="ml-auto text-muted">готово: {stats.done}/{stats.total}</span>
       </div>
 
-      <div className="max-h-56 space-y-1 overflow-y-auto">
+      <StageBreakdown rows={stageBreakdown} />
+
+      <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
         {stats.tasks.length === 0 && <p className="py-1 text-[11px] text-faint">На этом экране пока нет задач</p>}
         {stats.tasks.map((t) => {
           const b = boards.find((x) => x.id === t.boardId);
@@ -904,6 +907,41 @@ function NodeInspector({
   );
 }
 
+/** Разбивка задач узла по этапам (колонкам). Группируем по названию колонки. */
+function useStageBreakdown(tasks: Task[], boards: ReturnType<typeof useStore>["boards"]) {
+  return useMemo(() => {
+    const counts = new Map<string, { total: number; done: number }>();
+    tasks.forEach((t) => {
+      const b = boards.find((x) => x.id === t.boardId);
+      const name = b?.columns.find((c) => c.id === t.columnId)?.name ?? "—";
+      const cur = counts.get(name) ?? { total: 0, done: 0 };
+      cur.total += 1;
+      if (t.status === "done") cur.done += 1;
+      counts.set(name, cur);
+    });
+    return Array.from(counts.entries()).map(([name, v]) => ({ name, ...v }));
+  }, [tasks, boards]);
+}
+
+/** Компактные чипы «этап: N» под сводкой узла. */
+function StageBreakdown({ rows }: { rows: { name: string; total: number; done: number }[] }) {
+  if (rows.length < 2) return null; // при одном этапе разбивка не нужна
+  return (
+    <div className="mt-2 flex flex-wrap gap-1">
+      {rows.map((r) => (
+        <span
+          key={r.name}
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] text-muted"
+          title={`${r.name}: ${r.done}/${r.total} готово`}
+        >
+          <span className="truncate max-w-[92px] text-fg">{r.name}</span>
+          <b className="text-fg">{r.total}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Панель «Задачи экрана»: статус (ручной/авто), список задач, быстрое создание. */
 function NodeTasksPanel({
   node,
@@ -916,6 +954,7 @@ function NodeTasksPanel({
   const mapId = useMapId();
   const { boards, createTask } = useStore();
   const router = useRouter();
+  const stageBreakdown = useStageBreakdown(stats.tasks, boards);
   const [adding, setAdding] = useState(false);
   const [ntTitle, setNtTitle] = useState("");
   const [ntBoard, setNtBoard] = useState(boards[0]?.id ?? "");
@@ -976,6 +1015,8 @@ function NodeTasksPanel({
         )}
         <span className="ml-auto">готово: {stats.done}/{stats.total}</span>
       </div>
+
+      <StageBreakdown rows={stageBreakdown} />
 
       <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
         {stats.tasks.map((t) => {

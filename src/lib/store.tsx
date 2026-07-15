@@ -194,6 +194,8 @@ interface StoreContextValue extends AppData {
   updateTask: (id: string, patch: Partial<Omit<Task, "id">>) => void;
   deleteTask: (id: string) => void;
   moveTask: (taskId: string, toColumnId: string, toIndex: number) => void;
+  /** Безопасный перенос карточки (и её подзадач) в другую доску. */
+  moveTaskToBoard: (taskId: string, toBoardId: string, toColumnId: string) => void;
   toggleDone: (id: string, doneColumnId?: string) => void;
   // team workflow
   sendToReview: (id: string) => void;
@@ -740,6 +742,63 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [apply, persist, userId]
   );
 
+  // Безопасный перенос карточки в другую доску. Сохраняет всё содержимое
+  // (описание, чек-лист, вложения, комментарии, историю возвратов); переносит
+  // подзадачи вместе с родителем; журнал по этим задачам (привязан к этапам
+  // прежней доски) очищается, чтобы не показывать несуществующие этапы.
+  const moveTaskToBoard = useCallback(
+    (taskId: string, toBoardId: string, toColumnId: string) => {
+      const d = dataRef.current;
+      const task = d.tasks.find((t) => t.id === taskId);
+      const toBoard = d.boards.find((b) => b.id === toBoardId);
+      if (!task || !toBoard || task.boardId === toBoardId) return;
+      const col = toBoard.columns.find((c) => c.id === toColumnId) ?? toBoard.columns[0];
+      if (!col) return;
+
+      const nowIso = new Date().toISOString();
+      const doneCol = toBoard.columns[toBoard.columns.length - 1]?.id;
+      const becomingDone = col.id === doneCol;
+
+      // семья: сама карточка + её прямые подзадачи (переезжают вместе)
+      const children = d.tasks.filter((t) => t.parentId === taskId);
+      const family = [task, ...children];
+      const familyIds = new Set(family.map((t) => t.id));
+
+      let order = d.tasks
+        .filter((t) => t.boardId === toBoardId && t.columnId === col.id)
+        .reduce((m, t) => Math.max(m, t.order), Date.now());
+
+      const patched = family.map((t): Task => {
+        order += 1;
+        return {
+          ...t,
+          boardId: toBoardId,
+          columnId: col.id,
+          order,
+          stageEnteredAt: nowIso,
+          stageTimes: {}, // новая доска — тайминги этапов считаем заново
+          status: becomingDone ? "done" : "active",
+          completedAt: becomingDone ? t.completedAt ?? nowIso : null,
+          testedAt: becomingDone ? t.testedAt ?? nowIso : t.testedAt,
+          readyAt: becomingDone ? t.readyAt ?? nowIso : t.readyAt,
+          // подзадача, чей родитель НЕ переезжает вместе — отвязывается
+          parentId: t.parentId && !familyIds.has(t.parentId) ? null : t.parentId,
+        };
+      });
+      const patchedById = new Map(patched.map((t) => [t.id, t]));
+
+      const tasks = d.tasks.map((t) => patchedById.get(t.id) ?? t);
+      const journal = d.journal.filter((j) => !(j.taskId && familyIds.has(j.taskId)));
+      apply({ ...d, tasks, journal });
+
+      if (userId) {
+        persist(db.upsertTasks(patched, userId));
+        familyIds.forEach((id) => persist(db.deleteJournalByTask(id)));
+      }
+    },
+    [apply, persist, userId]
+  );
+
   const toggleDone = useCallback(
     (id: string, doneColId?: string) => {
       const d = dataRef.current;
@@ -1252,6 +1311,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateTask,
       deleteTask,
       moveTask,
+      moveTaskToBoard,
       toggleDone,
       sendToReview,
       acceptTask,
@@ -1294,6 +1354,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateTask,
       deleteTask,
       moveTask,
+      moveTaskToBoard,
       toggleDone,
       sendToReview,
       acceptTask,

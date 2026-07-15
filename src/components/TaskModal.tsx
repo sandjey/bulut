@@ -16,6 +16,8 @@ import {
   Activity,
   GitBranch,
   Target,
+  FolderInput,
+  ShieldCheck,
 } from "lucide-react";
 import { Modal } from "./Modal";
 import { TagInput } from "./TagInput";
@@ -114,13 +116,15 @@ interface TaskModalProps {
 }
 
 export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnly = false }: TaskModalProps) {
-  const { tasks, createTask, updateTask, deleteTask } = useStore();
+  const { tasks, boards, createTask, updateTask, deleteTask, moveTaskToBoard } = useStore();
   const notify = useNotifier();
   const can = useCan();
   const editing = !!task;
   const canEdit = can("card.edit") && !viewOnly;
   const canCreate = can("card.create") && !viewOnly;
   const canDelete = can("card.delete") && !viewOnly;
+  // Перенос в другую доску — по праву card.move, вне зависимости от card.edit.
+  const canMoveBoard = can("card.move") && !viewOnly;
   // В режиме редактирования поля доступны при праве card.edit; при создании — card.create.
   const fieldsDisabled = editing ? !canEdit : !canCreate;
   const canSave = editing ? canEdit : canCreate;
@@ -142,6 +146,45 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
   const [sprint, setSprint] = useState("");
   const [watchers, setWatchers] = useState<string[]>([]);
   const [custom, setCustom] = useState<Record<string, string>>({});
+  // Перенос в другую доску
+  const [moveBoardId, setMoveBoardId] = useState("");
+  const [moveColId, setMoveColId] = useState("");
+
+  const otherBoards = useMemo(() => boards.filter((b) => b.id !== board.id), [boards, board.id]);
+  const moveTargetBoard = useMemo(
+    () => otherBoards.find((b) => b.id === moveBoardId) ?? null,
+    [otherBoards, moveBoardId],
+  );
+  const subtaskCount = useMemo(
+    () => (task ? tasks.filter((t) => t.parentId === task.id && !t.deletedAt).length : 0),
+    [tasks, task],
+  );
+  // При выборе доски — колонку по умолчанию: с тем же названием, иначе первую.
+  useEffect(() => {
+    if (!moveTargetBoard) {
+      setMoveColId("");
+      return;
+    }
+    const sameName = moveTargetBoard.columns.find(
+      (c) => c.name.toLowerCase() === (board.columns.find((x) => x.id === columnId)?.name ?? "").toLowerCase(),
+    );
+    setMoveColId(sameName?.id ?? moveTargetBoard.columns[0]?.id ?? "");
+  }, [moveTargetBoard, board.columns, columnId]);
+
+  const doMoveBoard = () => {
+    if (!task || !moveTargetBoard || !moveColId) return;
+    const colName = moveTargetBoard.columns.find((c) => c.id === moveColId)?.name ?? "";
+    const extra = subtaskCount > 0 ? `\nВместе с ней переедут подзадачи: ${subtaskCount}.` : "";
+    const ok = window.confirm(
+      `Перенести карточку «${task.title}» в доску «${moveTargetBoard.name}» → колонка «${colName}»?\n\n` +
+        `Описание, чек-лист, вложения, фото, комментарии и история сохранятся.` +
+        extra,
+    );
+    if (!ok) return;
+    moveTaskToBoard(task.id, moveTargetBoard.id, moveColId);
+    setMoveBoardId("");
+    onClose();
+  };
 
   const allTags = useMemo(() => uniqueTags(tasks), [tasks]);
   const allEpics = useMemo(() => Array.from(new Set(tasks.map((t) => t.epic).filter(Boolean))), [tasks]);
@@ -746,6 +789,65 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
           <Section key={`wf-${task.id}`} title="Статус, время и комментарии" icon={Activity} defaultOpen>
             <TaskWorkflow taskId={task.id} board={board} />
           </Section>
+
+          {canMoveBoard && otherBoards.length > 0 && (
+            <Section
+              key={`move-${task.id}`}
+              title="Перенести в другую доску"
+              icon={FolderInput}
+              hint="безопасно"
+            >
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 rounded-lg bg-surface-2/60 px-3 py-2 text-xs text-muted">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  <span>
+                    Содержимое карточки, комментарии, вложения и история сохранятся.
+                    {subtaskCount > 0 && ` Подзадачи (${subtaskCount}) переедут вместе с карточкой.`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Доска</label>
+                    <select
+                      className="input"
+                      value={moveBoardId}
+                      onChange={(e) => setMoveBoardId(e.target.value)}
+                    >
+                      <option value="">— выбрать доску —</option>
+                      {otherBoards.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Колонка</label>
+                    <select
+                      className="input"
+                      value={moveColId}
+                      onChange={(e) => setMoveColId(e.target.value)}
+                      disabled={!moveTargetBoard}
+                    >
+                      {moveTargetBoard?.columns.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <button
+                  className="btn-outline w-full"
+                  onClick={doMoveBoard}
+                  disabled={!moveTargetBoard || !moveColId}
+                >
+                  <FolderInput className="h-4 w-4" />
+                  Перенести карточку
+                </button>
+              </div>
+            </Section>
+          )}
         </div>
       )}
     </Modal>
