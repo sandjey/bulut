@@ -74,11 +74,49 @@ export interface ResponseData {
   error?: string;
 }
 
+// ─── Потоки (Часть B: автоматизация блоками, как n8n) ────────────────────────────
+export interface ExtractRule {
+  id: string;
+  varName: string; // куда сохранить (напр. token)
+  path: string; // откуда взять из ответа (напр. access_token или data.0.id)
+}
+
+export interface FlowNode {
+  id: string;
+  x: number;
+  y: number;
+  request: ApiRequest;
+  extract: ExtractRule[];
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface Flow {
+  id: string;
+  name: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+
+export type FlowRunStatus = "idle" | "running" | "ok" | "error" | "skipped";
+
+export interface FlowNodeResult {
+  status: FlowRunStatus;
+  sent?: { method: string; url: string; headers: Record<string, string>; body?: string };
+  response?: ResponseData;
+  passed?: Record<string, string>;
+}
+
 export interface ConsoleState {
   collections: Collection[];
   environments: Environment[];
   activeEnvId: string | null;
   history: HistoryEntry[];
+  flows: Flow[];
 }
 
 // ─── id / фабрики ──────────────────────────────────────────────────────────────
@@ -248,6 +286,92 @@ export async function execute(final: {
       error: e instanceof Error ? e.message : "Не удалось выполнить запрос",
     };
   }
+}
+
+// ─── выполнение потока (Часть B) ─────────────────────────────────────────────────
+/** Достать значение из ответа по пути «data.0.id» / «access_token». */
+export function getByPath(obj: unknown, path: string): unknown {
+  if (!path) return obj;
+  return path.split(".").reduce<unknown>((acc, key) => {
+    if (acc == null) return undefined;
+    if (Array.isArray(acc)) return acc[Number(key)];
+    if (typeof acc === "object") return (acc as Record<string, unknown>)[key];
+    return undefined;
+  }, obj);
+}
+
+export function toStringVal(v: unknown): string {
+  if (v == null) return "";
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+/** Порядок выполнения по стрелкам (топологически; циклы — в конец). */
+export function topoOrder(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const indeg = new Map(nodes.map((n) => [n.id, 0]));
+  const adj = new Map<string, string[]>();
+  edges.forEach((e) => {
+    if (!byId.has(e.source) || !byId.has(e.target)) return;
+    adj.set(e.source, [...(adj.get(e.source) ?? []), e.target]);
+    indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
+  });
+  const queue = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id);
+  const order: FlowNode[] = [];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = byId.get(id);
+    if (n) order.push(n);
+    (adj.get(id) ?? []).forEach((t) => {
+      indeg.set(t, (indeg.get(t) ?? 1) - 1);
+      if ((indeg.get(t) ?? 0) <= 0) queue.push(t);
+    });
+  }
+  nodes.forEach((n) => {
+    if (!seen.has(n.id)) order.push(n);
+  });
+  return order;
+}
+
+/**
+ * Запуск потока: блоки по стрелкам, переменные копятся между блоками.
+ * onProgress вызывается при старте и завершении каждого блока.
+ * Возвращает итоговую карту переменных.
+ */
+export async function runFlow(
+  flow: Flow,
+  baseVars: Record<string, string>,
+  token: string,
+  wsId: string,
+  onProgress: (nodeId: string, result: FlowNodeResult) => void,
+): Promise<Record<string, string>> {
+  const vars: Record<string, string> = { ...baseVars };
+  const order = topoOrder(flow.nodes, flow.edges);
+  for (const node of order) {
+    const final = buildFinal(node.request, vars, token, wsId);
+    onProgress(node.id, { status: "running", sent: final });
+    const res = await execute(final);
+    const passed: Record<string, string> = {};
+    if (res.ok) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(res.body);
+      } catch {
+        parsed = undefined;
+      }
+      node.extract.forEach((rule) => {
+        if (!rule.varName) return;
+        const val = toStringVal(getByPath(parsed, rule.path));
+        vars[rule.varName] = val;
+        passed[rule.varName] = val;
+      });
+    }
+    onProgress(node.id, { status: res.ok ? "ok" : "error", sent: final, response: res, passed });
+    if (!res.ok) break; // на ошибке останавливаем поток
+  }
+  return vars;
 }
 
 // ─── экспорт как curl ────────────────────────────────────────────────────────────
@@ -486,6 +610,7 @@ export function defaultState(): ConsoleState {
     environments: [bulutEnv],
     activeEnvId: bulutEnv.id,
     history: [],
+    flows: [],
   };
 }
 
@@ -497,6 +622,7 @@ export function loadState(userId: string): ConsoleState {
     const parsed = JSON.parse(raw) as ConsoleState;
     if (!parsed.collections?.length) parsed.collections = [seedBulutCollection()];
     if (!parsed.environments?.length) return defaultState();
+    if (!parsed.flows) parsed.flows = [];
     return parsed;
   } catch {
     return defaultState();
