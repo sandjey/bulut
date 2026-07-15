@@ -21,6 +21,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
 import { getSupabase } from "@/lib/supabase";
+import * as db from "@/lib/db";
 import { cn } from "@/lib/utils";
 import {
   loadState,
@@ -87,18 +88,59 @@ export default function ConsolePage() {
   const [logOpen, setLogOpen] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const loadedRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // загрузка/сохранение состояния (localStorage, как Postman)
+  // Загрузка: сначала база (синхронизация между устройствами), затем локальный кэш.
   useEffect(() => {
     if (!userId) return;
-    const s = loadState(userId);
-    setState(s);
-    const first = s.collections[0]?.requests[0] ?? s.collections[0]?.folders[0]?.requests[0] ?? null;
-    setSelectedId(first?.id ?? null);
+    let cancelled = false;
+    (async () => {
+      const local = loadState(userId);
+      const remote = await db.fetchConsoleState(userId);
+      if (cancelled) return;
+      let s = local;
+      if (remote && typeof remote === "object") {
+        const r = remote as Partial<ConsoleState>;
+        s = {
+          collections: r.collections?.length ? r.collections : local.collections,
+          environments: r.environments?.length ? r.environments : local.environments,
+          activeEnvId: r.activeEnvId ?? local.activeEnvId,
+          history: local.history, // журнал запросов — только локально
+        };
+      }
+      setState(s);
+      const first = s.collections[0]?.requests[0] ?? s.collections[0]?.folders[0]?.requests[0] ?? null;
+      setSelectedId(first?.id ?? null);
+      loadedRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
+
+  // Локальный кэш (моментально, офлайн-фолбэк).
   useEffect(() => {
     if (userId) saveState(userId, state);
   }, [userId, state]);
+
+  // Сохранение в базу (с задержкой) — коллекции и окружения. Журнал не шлём.
+  useEffect(() => {
+    if (!userId || !loadedRef.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      db.saveConsoleState(userId, {
+        collections: state.collections,
+        environments: state.environments,
+        activeEnvId: state.activeEnvId,
+      }).catch(() => {
+        /* миграция не применена / офлайн — остаётся локальный кэш */
+      });
+    }, 700);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [userId, state.collections, state.environments, state.activeEnvId]);
 
   // токен текущей сессии — для «Bulut»-авторизации
   useEffect(() => {

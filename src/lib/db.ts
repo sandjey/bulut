@@ -682,6 +682,33 @@ export async function softDeleteProjectMapRow(id: string) {
   if (error) throw error;
 }
 
+// ---------- Bulut API (Console): коллекции/окружения по пользователю ----------
+/** Загрузить сохранённое состояние консоли (коллекции, окружения). null — если нет/недоступно. */
+export async function fetchConsoleState(userId: string): Promise<unknown | null> {
+  try {
+    const { data, error } = await client()
+      .from("api_consoles")
+      .select("state")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return null; // миграция не применена / нет доступа — не ломаем UI
+    return (data as { state?: unknown } | null)?.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Сохранить состояние консоли (upsert по user_id). */
+export async function saveConsoleState(userId: string, state: unknown): Promise<void> {
+  const { error } = await client()
+    .from("api_consoles")
+    .upsert(
+      { user_id: userId, state, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    );
+  if (error) throw error;
+}
+
 /** Восстановление карты из Корзины. */
 export async function restoreProjectMapRow(id: string) {
   const { error } = await client().from("project_maps").update({ deleted_at: null }).eq("id", id);
