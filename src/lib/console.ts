@@ -74,50 +74,36 @@ export interface ResponseData {
   error?: string;
 }
 
-// ─── Потоки (Часть B: автоматизация блоками, как n8n) ────────────────────────────
-export interface ExtractRule {
+// ─── Сценарии (простой список шагов сверху вниз) ─────────────────────────────────
+export type CondOp = "exists" | "notExists" | "eq" | "ne" | "contains" | "gt" | "lt";
+
+/** Значение, взятое из ответа шага (клик по полю). */
+export interface StepCapture {
   id: string;
-  varName: string; // куда сохранить (напр. token)
-  path: string; // откуда взять из ответа (напр. access_token или data.0.id)
+  from: string; // путь в ответе: access_token / data.0.id
+  to: string; // понятное имя переменной: token
 }
 
-export interface FlowNode {
-  id: string;
-  x: number;
-  y: number;
-  request: ApiRequest;
-  extract?: ExtractRule[]; // устар. (маппинг переехал на стрелки) — для совместимости
-}
-
-/** Что передать из ответа предыдущего блока в переменную. */
-export interface EdgeMapping {
-  id: string;
-  from: string; // путь в ответе источника: access_token / data.0.id
-  to: string; // имя переменной: token
-}
-
-export type CondOp = "always" | "exists" | "notExists" | "eq" | "ne" | "contains" | "gt" | "lt";
-
-/** Условие перехода по стрелке. */
-export interface EdgeCondition {
-  left: string; // путь в ответе источника или {{переменная}}
+/** Условие «выполнять шаг только если …». */
+export interface StepCondition {
+  enabled: boolean;
+  left: string; // имя ранее взятого значения
   op: CondOp;
-  right: string; // значение для сравнения (может содержать {{переменные}})
+  right: string; // значение для сравнения
 }
 
-export interface FlowEdge {
+export interface FlowStep {
   id: string;
-  source: string;
-  target: string;
-  mappings: EdgeMapping[]; // что передать дальше
-  condition?: EdgeCondition; // когда переходить (по умолчанию — всегда)
+  request: ApiRequest; // сам API (заполнен из коллекции)
+  captures: StepCapture[]; // что взять из ответа этого шага
+  bindings: Record<string, string>; // {{плейсхолдер}} → имя значения (или "=литерал")
+  condition?: StepCondition;
 }
 
 export interface Flow {
   id: string;
   name: string;
-  nodes: FlowNode[];
-  edges: FlowEdge[];
+  steps: FlowStep[];
 }
 
 export type FlowRunStatus = "idle" | "running" | "ok" | "error" | "skipped";
@@ -323,50 +309,64 @@ export function toStringVal(v: unknown): string {
   return typeof v === "string" ? v : JSON.stringify(v);
 }
 
-/** Порядок выполнения по стрелкам (топологически; циклы — в конец). */
-export function topoOrder(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const indeg = new Map(nodes.map((n) => [n.id, 0]));
-  const adj = new Map<string, string[]>();
-  edges.forEach((e) => {
-    if (!byId.has(e.source) || !byId.has(e.target)) return;
-    adj.set(e.source, [...(adj.get(e.source) ?? []), e.target]);
-    indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1);
-  });
-  const queue = nodes.filter((n) => (indeg.get(n.id) ?? 0) === 0).map((n) => n.id);
-  const order: FlowNode[] = [];
-  const seen = new Set<string>();
-  while (queue.length) {
-    const id = queue.shift()!;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const n = byId.get(id);
-    if (n) order.push(n);
-    (adj.get(id) ?? []).forEach((t) => {
-      indeg.set(t, (indeg.get(t) ?? 1) - 1);
-      if ((indeg.get(t) ?? 0) <= 0) queue.push(t);
-    });
+/** Плоский список «путь → значение» из ответа (для клика-выбора). */
+export interface JsonLeaf {
+  path: string;
+  label: string; // последний ключ
+  preview: string;
+}
+export function flattenJson(raw: string, max = 100): JsonLeaf[] {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return [];
   }
-  nodes.forEach((n) => {
-    if (!seen.has(n.id)) order.push(n);
-  });
-  return order;
+  const out: JsonLeaf[] = [];
+  const walk = (val: unknown, path: string, key: string) => {
+    if (out.length >= max) return;
+    if (val === null || typeof val !== "object") {
+      out.push({ path, label: key || path, preview: toStringVal(val).slice(0, 70) });
+    } else if (Array.isArray(val)) {
+      val.slice(0, 8).forEach((v, i) => walk(v, path ? `${path}.${i}` : `${i}`, `${key}[${i}]`));
+    } else {
+      Object.entries(val as Record<string, unknown>).forEach(([k, v]) => walk(v, path ? `${path}.${k}` : k, k));
+    }
+  };
+  walk(obj, "", "");
+  return out;
 }
 
-/** Значение слева в условии: путь в ответе или {{переменная}}. */
+/** {{плейсхолдеры}}, которые нужны запросу (без служебных base_url/workspace_id/bulut_token). */
+const SYSTEM_VARS = new Set(["base_url", "workspace_id", "bulut_token"]);
+export function extractPlaceholders(req: ApiRequest, extraKnown: Set<string> = new Set()): string[] {
+  const texts: string[] = [req.url, req.body, req.auth.token ?? "", req.auth.username ?? "", req.auth.password ?? ""];
+  req.headers.filter((h) => h.enabled).forEach((h) => texts.push(h.key, h.value));
+  req.params.filter((p) => p.enabled).forEach((p) => texts.push(p.key, p.value));
+  req.form.filter((f) => f.enabled).forEach((f) => texts.push(f.key, f.value));
+  const set = new Set<string>();
+  texts.forEach((t) => {
+    const re = /\{\{\s*([\w.-]+)\s*\}\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(t || ""))) if (!SYSTEM_VARS.has(m[1]) && !extraKnown.has(m[1])) set.add(m[1]);
+  });
+  return [...set];
+}
+
+/** Значение слева в условии: имя ранее взятого значения (или путь / {{перем}}). */
 function condLeft(left: string, parsed: unknown, vars: Record<string, string>): unknown {
   if (!left) return undefined;
   if (left.includes("{{")) return resolveVars(left, vars);
+  if (left in vars) return vars[left];
   return getByPath(parsed, left);
 }
 
-/** Проверка условия перехода. Пустое/always — всегда true. */
 export function evalCondition(
-  cond: EdgeCondition | undefined,
+  cond: { left: string; op: CondOp; right: string } | undefined,
   parsed: unknown,
   vars: Record<string, string>,
 ): boolean {
-  if (!cond || cond.op === "always") return true;
+  if (!cond) return true;
   const leftRaw = condLeft(cond.left, parsed, vars);
   const l = toStringVal(leftRaw);
   const r = resolveVars(cond.right ?? "", vars);
@@ -390,33 +390,69 @@ export function evalCondition(
   }
 }
 
+/** Совместимость: старые потоки (nodes/edges) приводим к списку шагов. */
+export function normalizeFlow(raw: unknown): Flow {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  if (Array.isArray(r.steps)) {
+    return {
+      id: (r.id as string) ?? uid(),
+      name: (r.name as string) ?? "Сценарий",
+      steps: (r.steps as FlowStep[]).map((s) => ({
+        id: s.id ?? uid(),
+        request: s.request,
+        captures: s.captures ?? [],
+        bindings: s.bindings ?? {},
+        condition: s.condition,
+      })),
+    };
+  }
+  // старый граф → линейный список в порядке узлов; маппинги стрелок → captures источника
+  const nodes = (r.nodes as { id: string; request: ApiRequest }[]) ?? [];
+  const edges = (r.edges as { source: string; target: string; mappings?: StepCapture[] }[]) ?? [];
+  const steps: FlowStep[] = nodes.map((n) => {
+    const outs = edges.filter((e) => e.source === n.id);
+    const captures = outs.flatMap((e) => (e.mappings ?? []).map((m) => ({ id: uid(), from: m.from, to: m.to })));
+    return { id: n.id, request: n.request, captures, bindings: {} };
+  });
+  return { id: (r.id as string) ?? uid(), name: (r.name as string) ?? "Сценарий", steps };
+}
+
 /**
- * Запуск потока: блоки идут по стрелкам. На каждой стрелке — маппинг (что
- * передать из ответа в переменные) и условие (переходить ли). Блок выполняется,
- * если он корневой ИЛИ активна хотя бы одна входящая стрелка. Так получаются
- * цепочки и ветвления. Переменные копятся между блоками.
+ * Запуск сценария: шаги сверху вниз. У каждого шага — привязки (плейсхолдеры →
+ * взятые значения), условие «выполнять если…», и что взять из ответа. Переменные
+ * копятся между шагами. Стоп на ошибке или невыполненном условии.
  */
 export async function runFlow(
   flow: Flow,
   baseVars: Record<string, string>,
   token: string,
   wsId: string,
-  onProgress: (nodeId: string, result: FlowNodeResult) => void,
+  onProgress: (stepId: string, result: FlowNodeResult) => void,
 ): Promise<Record<string, string>> {
   const vars: Record<string, string> = { ...baseVars };
-  const order = topoOrder(flow.nodes, flow.edges);
-  const activeEdge = new Set<string>();
 
-  for (const node of order) {
-    const incoming = flow.edges.filter((e) => e.target === node.id);
-    const reachable = incoming.length === 0 || incoming.some((e) => activeEdge.has(e.id));
-    if (!reachable) {
-      onProgress(node.id, { status: "skipped" });
-      continue;
+  for (const step of flow.steps) {
+    // привязки: плейсхолдер ← имя значения (или "=литерал")
+    Object.entries(step.bindings ?? {}).forEach(([ph, src]) => {
+      if (!src) return;
+      if (src.startsWith("=")) vars[ph] = src.slice(1);
+      else if (src in vars) vars[ph] = vars[src];
+    });
+
+    if (step.condition?.enabled) {
+      const ok = evalCondition(
+        { left: step.condition.left, op: step.condition.op, right: step.condition.right },
+        undefined,
+        vars,
+      );
+      if (!ok) {
+        onProgress(step.id, { status: "skipped" });
+        break; // «выполнять только если…» не выполнилось → останавливаем сценарий
+      }
     }
 
-    const final = buildFinal(node.request, vars, token, wsId);
-    onProgress(node.id, { status: "running", sent: final });
+    const final = buildFinal(step.request, vars, token, wsId);
+    onProgress(step.id, { status: "running", sent: final });
     const res = await execute(final);
 
     let parsed: unknown;
@@ -426,21 +462,17 @@ export async function runFlow(
       parsed = undefined;
     }
 
-    // исходящие стрелки: условие → маппинг → активируем
     const passed: Record<string, string> = {};
     if (res.ok) {
-      for (const e of flow.edges.filter((e) => e.source === node.id)) {
-        if (!evalCondition(e.condition, parsed, vars)) continue;
-        (e.mappings ?? []).forEach((m) => {
-          if (!m.to) return;
-          const val = toStringVal(getByPath(parsed, m.from));
-          vars[m.to] = val;
-          passed[m.to] = val;
-        });
-        activeEdge.add(e.id);
-      }
+      (step.captures ?? []).forEach((c) => {
+        if (!c.to) return;
+        const val = toStringVal(getByPath(parsed, c.from));
+        vars[c.to] = val;
+        passed[c.to] = val;
+      });
     }
-    onProgress(node.id, { status: res.ok ? "ok" : "error", sent: final, response: res, passed });
+    onProgress(step.id, { status: res.ok ? "ok" : "error", sent: final, response: res, passed });
+    if (!res.ok) break;
   }
   return vars;
 }
