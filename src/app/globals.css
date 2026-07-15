@@ -561,3 +561,11 @@ body {
   .bulut-node:hover { transform: none !important; }
   .bulut-float, .bulut-glow, .bulut-pulse { animation: none !important; }
 }
+
+/* Bulut Console — подсветка JSON */
+.json-view { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.json-view .tok-key { color: rgb(var(--brand-3)); }
+.json-view .tok-str { color: #10b981; }
+.json-view .tok-num { color: #f59e0b; }
+.json-view .tok-bool { color: rgb(var(--brand-2)); font-weight: 600; }
+.json-view .tok-null { color: #94a3b8; font-style: italic; }
