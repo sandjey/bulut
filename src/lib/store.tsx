@@ -1032,27 +1032,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const task = d.tasks.find((t) => t.id === id);
       if (!task) return;
       const board = d.boards.find((b) => b.id === task.boardId);
-      // back to "in progress": second column if exists, else first
-      const inProgressCol = board?.columns[1]?.id ?? board?.columns[0]?.id ?? task.columnId;
+      // возврат тестировщиком → в первую колонку «К выполнению»
+      const backCol = board?.columns[0]?.id ?? task.columnId;
       const nowIso = new Date().toISOString();
 
       const returnEvent: ReturnEvent = {
         at: nowIso,
         from: board?.columns.find((c) => c.id === task.columnId)?.name ?? "—",
-        to: board?.columns.find((c) => c.id === inProgressCol)?.name ?? "—",
+        to: board?.columns.find((c) => c.id === backCol)?.name ?? "—",
         seconds: secondsBetween(task.stageEnteredAt ?? task.createdAt, nowIso),
         reason: reason.trim() || undefined,
       };
 
       const patch: Partial<Task> = {
-        columnId: inProgressCol,
+        columnId: backCol,
         status: "active",
         readyAt: null,
         testedAt: null,
         completedAt: null,
         stageEnteredAt: nowIso,
         stageTimes:
-          inProgressCol !== task.columnId
+          backCol !== task.columnId
             ? accrueStageTimes(task, board, nowIso)
             : task.stageTimes,
         returnCount: (task.returnCount ?? 0) + 1,
