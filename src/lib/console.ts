@@ -5,20 +5,33 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | 
 export const HTTP_METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 export type BodyMode = "none" | "json" | "raw" | "form" | "urlencoded";
-export type AuthType = "none" | "bulut" | "bearer" | "basic";
+export type AuthType = "none" | "bulut" | "bearer" | "basic" | "apikey";
 
 export interface KV {
   id: string;
   key: string;
   value: string;
   enabled: boolean;
+  isFile?: boolean; // строка form-data — файл (значение хранится вне запроса)
 }
 
 export interface AuthConfig {
   type: AuthType;
-  token?: string; // bearer
+  token?: string; // bearer / oauth2
   username?: string; // basic
   password?: string; // basic
+  key?: string; // apikey — имя
+  value?: string; // apikey — значение
+  addTo?: "header" | "query"; // apikey — куда
+}
+
+/** Проверка ответа (Tests). */
+export type AssertKind = "status" | "hasPath" | "equals" | "contains" | "time";
+export interface Assertion {
+  id: string;
+  kind: AssertKind;
+  path?: string; // для hasPath/equals: путь в JSON
+  expected?: string; // ожидаемое значение / статус / мс
 }
 
 export interface ApiRequest {
@@ -32,6 +45,7 @@ export interface ApiRequest {
   bodyMode: BodyMode;
   body: string; // json / raw text
   form: KV[]; // form-data + urlencoded
+  tests?: Assertion[];
 }
 
 export interface Folder {
@@ -141,15 +155,71 @@ export function emptyRequest(partial: Partial<ApiRequest> = {}): ApiRequest {
     bodyMode: partial.bodyMode ?? "none",
     body: partial.body ?? "",
     form: partial.form ?? [],
+    tests: partial.tests ?? [],
   };
 }
 
 // ─── подстановка {{переменных}} ──────────────────────────────────────────────────
+/** Динамические значения Postman-стиля: {{$timestamp}}, {{$randomUUID}} и т.п. */
+function dynamicVar(name: string): string | null {
+  switch (name) {
+    case "$timestamp":
+      return String(Math.floor(Date.now() / 1000));
+    case "$isoTimestamp":
+      return new Date().toISOString();
+    case "$randomUUID":
+      return typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
+    case "$randomInt":
+    case "$random":
+      return String(Math.floor(Math.random() * 1000));
+    case "$guid":
+      return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+    default:
+      return null;
+  }
+}
+
 export function resolveVars(input: string, vars: Record<string, string>): string {
   if (!input) return input;
-  return input.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (m, name: string) =>
-    name in vars ? vars[name] : m,
-  );
+  return input.replace(/\{\{\s*([\w.$-]+)\s*\}\}/g, (m, name: string) => {
+    if (name in vars) return vars[name];
+    const dyn = dynamicVar(name);
+    return dyn !== null ? dyn : m;
+  });
+}
+
+/** Разбить URL на базу и query-параметры (для синхронизации с вкладкой «Параметры»). */
+export function splitUrl(url: string): { base: string; params: KV[] } {
+  const qi = url.indexOf("?");
+  if (qi < 0) return { base: url, params: [] };
+  const base = url.slice(0, qi);
+  const params: KV[] = [];
+  url
+    .slice(qi + 1)
+    .split("&")
+    .filter(Boolean)
+    .forEach((pair) => {
+      const eq = pair.indexOf("=");
+      const k = eq < 0 ? pair : pair.slice(0, eq);
+      const v = eq < 0 ? "" : pair.slice(eq + 1);
+      try {
+        params.push(kv(decodeURIComponent(k), decodeURIComponent(v)));
+      } catch {
+        params.push(kv(k, v));
+      }
+    });
+  return { base, params };
+}
+
+/** Собрать полный URL из базы и параметров (для отображения). */
+export function joinUrl(base: string, params: KV[]): string {
+  const q = params
+    .filter((p) => p.enabled && p.key)
+    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+    .join("&");
+  return q ? `${base}${base.includes("?") ? "&" : "?"}${q}` : base;
 }
 
 /** Собрать карту переменных: окружение + служебные (base_url, workspace_id, bulut_token).
@@ -179,7 +249,6 @@ export function buildFinal(
   const query = req.params
     .filter((p) => p.enabled && p.key)
     .map((p) => `${encodeURIComponent(S(p.key))}=${encodeURIComponent(S(p.value))}`);
-  if (query.length) url += (url.includes("?") ? "&" : "?") + query.join("&");
 
   // Заголовки
   const headers: Record<string, string> = {};
@@ -194,7 +263,15 @@ export function buildFinal(
   } else if (req.auth.type === "basic") {
     const raw = `${S(req.auth.username ?? "")}:${S(req.auth.password ?? "")}`;
     headers["Authorization"] = `Basic ${typeof btoa !== "undefined" ? btoa(raw) : raw}`;
+  } else if (req.auth.type === "apikey" && req.auth.key) {
+    if (req.auth.addTo === "query") {
+      query.push(`${encodeURIComponent(S(req.auth.key))}=${encodeURIComponent(S(req.auth.value ?? ""))}`);
+    } else {
+      headers[S(req.auth.key)] = S(req.auth.value ?? "");
+    }
   }
+
+  if (query.length) url += (url.includes("?") ? "&" : "?") + query.join("&");
 
   // Тело
   let body: string | undefined;
@@ -222,6 +299,63 @@ export function buildFinal(
   return { method: req.method, url, headers, body };
 }
 
+// ─── куки (cookie jar) для внешних запросов ──────────────────────────────────────
+// host → { name → value }. Хранится в браузере, чтобы сессии между запросами жили.
+type CookieJar = Record<string, Record<string, string>>;
+const JAR_KEY = "bulut.console.cookies";
+let jarCache: CookieJar | null = null;
+function jar(): CookieJar {
+  if (jarCache) return jarCache;
+  if (typeof window === "undefined") return (jarCache = {});
+  try {
+    jarCache = JSON.parse(localStorage.getItem(JAR_KEY) || "{}");
+  } catch {
+    jarCache = {};
+  }
+  return jarCache!;
+}
+function saveJar() {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(JAR_KEY, JSON.stringify(jar()));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+function cookieHeaderFor(url: string): string {
+  const h = hostOf(url);
+  if (!h || !jar()[h]) return "";
+  return Object.entries(jar()[h])
+    .map(([k, v]) => `${k}=${v}`)
+    .join("; ");
+}
+function storeSetCookies(url: string, setCookies: string[]) {
+  const h = hostOf(url);
+  if (!h || !setCookies?.length) return;
+  jar()[h] = jar()[h] || {};
+  setCookies.forEach((sc) => {
+    const first = sc.split(";")[0];
+    const eq = first.indexOf("=");
+    if (eq > 0) jar()[h][first.slice(0, eq).trim()] = first.slice(eq + 1).trim();
+  });
+  saveJar();
+}
+export function clearCookies() {
+  jarCache = {};
+  saveJar();
+}
+export function cookieCount(): number {
+  return Object.values(jar()).reduce((n, c) => n + Object.keys(c).length, 0);
+}
+
 // ─── выполнение запроса (свой домен — напрямую; внешний — через прокси) ──────────
 function isExternal(url: string): boolean {
   if (url.startsWith("/")) return false;
@@ -234,23 +368,56 @@ function isExternal(url: string): boolean {
   }
 }
 
-export async function execute(final: {
-  method: string;
-  url: string;
-  headers: Record<string, string>;
-  body?: string;
-}): Promise<ResponseData> {
+// Файлы form-data (эфемерно, по id строки — не сохраняются/не синхронизируются).
+export const fileStore: Map<string, File> = new Map();
+
+export async function execute(
+  final: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body?: string;
+  },
+  formData?: FormData,
+): Promise<ResponseData> {
   const started = Date.now();
   try {
+    if (formData && isExternal(final.url)) {
+      return {
+        status: 0,
+        statusText: "",
+        ms: 0,
+        sizeBytes: 0,
+        headers: {},
+        body: "",
+        ok: false,
+        error: "Загрузка файлов доступна только для своего API (Bulut), не для внешних адресов.",
+      };
+    }
+    if (formData) {
+      // multipart напрямую (свой домен); Content-Type ставит браузер с boundary
+      const headers = { ...final.headers };
+      delete headers["Content-Type"];
+      delete headers["content-type"];
+      const res = await fetch(final.url, { method: final.method, headers, body: formData });
+      const text = await res.text();
+      const rh: Record<string, string> = {};
+      res.headers.forEach((v, k) => (rh[k] = v));
+      return { status: res.status, statusText: res.statusText, ms: Date.now() - started, sizeBytes: new Blob([text]).size, headers: rh, body: text, ok: res.ok };
+    }
     if (isExternal(final.url)) {
+      // добавим сохранённые куки для этого хоста
+      const cookie = cookieHeaderFor(final.url);
+      const headers = cookie ? { Cookie: cookie, ...final.headers } : final.headers;
       // Внешний адрес → серверный прокси (обходит CORS, защищён от приватных адресов).
       const res = await fetch("/api/console/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(final),
+        body: JSON.stringify({ ...final, headers }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || `Прокси вернул ${res.status}`);
+      if (Array.isArray(j.setCookies)) storeSetCookies(final.url, j.setCookies);
       return {
         status: j.status,
         statusText: j.statusText ?? "",
@@ -479,11 +646,171 @@ export async function runFlow(
 }
 
 // ─── экспорт как curl ────────────────────────────────────────────────────────────
-export function toCurl(final: { method: string; url: string; headers: Record<string, string>; body?: string }): string {
+export interface FinalReq {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+}
+
+export function toCurl(final: FinalReq): string {
   const parts = [`curl -X ${final.method} '${final.url}'`];
   Object.entries(final.headers).forEach(([k, v]) => parts.push(`  -H '${k}: ${v}'`));
   if (final.body) parts.push(`  -d '${final.body.replace(/'/g, "'\\''")}'`);
   return parts.join(" \\\n");
+}
+
+// ─── кодогенерация (fetch / axios / python) ──────────────────────────────────────
+export type CodeLang = "curl" | "fetch" | "axios" | "python";
+export const CODE_LANGS: { key: CodeLang; label: string }[] = [
+  { key: "curl", label: "cURL" },
+  { key: "fetch", label: "JS fetch" },
+  { key: "axios", label: "JS axios" },
+  { key: "python", label: "Python requests" },
+];
+
+export function generateCode(final: FinalReq, lang: CodeLang): string {
+  if (lang === "curl") return toCurl(final);
+  const h = JSON.stringify(final.headers, null, 2);
+  if (lang === "fetch") {
+    const opts: string[] = [`  method: "${final.method}"`, `  headers: ${h.replace(/\n/g, "\n  ")}`];
+    if (final.body) opts.push(`  body: ${JSON.stringify(final.body)}`);
+    return `fetch("${final.url}", {\n${opts.join(",\n")}\n})\n  .then((r) => r.json())\n  .then(console.log);`;
+  }
+  if (lang === "axios") {
+    const cfg: string[] = [`  method: "${final.method.toLowerCase()}"`, `  url: "${final.url}"`, `  headers: ${h.replace(/\n/g, "\n  ")}`];
+    if (final.body) cfg.push(`  data: ${JSON.stringify(final.body)}`);
+    return `import axios from "axios";\n\naxios({\n${cfg.join(",\n")}\n}).then((r) => console.log(r.data));`;
+  }
+  // python requests
+  const pyHeaders = JSON.stringify(final.headers, null, 4);
+  const dataLine = final.body ? `, data=${JSON.stringify(final.body)}` : "";
+  return `import requests\n\nresp = requests.request(\n    "${final.method}",\n    "${final.url}",\n    headers=${pyHeaders}${dataLine},\n)\nprint(resp.status_code, resp.text)`;
+}
+
+// ─── импорт из cURL ──────────────────────────────────────────────────────────────
+/** Разбирает команду curl в запрос. Поддерживает -X, -H, -d/--data*, -u, url. */
+export function parseCurl(cmd: string): ApiRequest | null {
+  const text = cmd.trim().replace(/\\\r?\n/g, " ");
+  if (!/^\s*curl\b/.test(text)) return null;
+  // токенизация с учётом кавычек
+  const tokens: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) tokens.push(m[1] ?? m[2] ?? m[3] ?? "");
+  tokens.shift(); // убрать "curl"
+
+  let url = "";
+  let method = "";
+  const headers: KV[] = [];
+  let body = "";
+  let auth: AuthConfig = { type: "none" };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === "-X" || t === "--request") method = (tokens[++i] || "GET").toUpperCase();
+    else if (t === "-H" || t === "--header") {
+      const hv = tokens[++i] || "";
+      const ci = hv.indexOf(":");
+      if (ci > 0) headers.push(kv(hv.slice(0, ci).trim(), hv.slice(ci + 1).trim()));
+    } else if (t === "-d" || t === "--data" || t === "--data-raw" || t === "--data-binary" || t === "--data-urlencode") {
+      body += (body ? "&" : "") + (tokens[++i] || "");
+    } else if (t === "-u" || t === "--user") {
+      const up = tokens[++i] || "";
+      const ci = up.indexOf(":");
+      auth = { type: "basic", username: ci >= 0 ? up.slice(0, ci) : up, password: ci >= 0 ? up.slice(ci + 1) : "" };
+    } else if (t === "--url") url = tokens[++i] || "";
+    else if (t === "-b" || t === "--cookie") headers.push(kv("Cookie", tokens[++i] || ""));
+    else if (!t.startsWith("-") && !url) url = t;
+  }
+
+  // авторизация из заголовка
+  const authHeader = headers.find((h) => h.key.toLowerCase() === "authorization");
+  if (authHeader) {
+    const [scheme, ...rest] = authHeader.value.split(" ");
+    if (scheme?.toLowerCase() === "bearer") auth = { type: "bearer", token: rest.join(" ") };
+  }
+
+  if (!url) return null;
+  const isJson = /application\/json/i.test(headers.find((h) => h.key.toLowerCase() === "content-type")?.value ?? "") || /^\s*[{[]/.test(body);
+  const split = splitUrl(url);
+  return emptyRequest({
+    name: "Импорт cURL",
+    method: (method || (body ? "POST" : "GET")) as HttpMethod,
+    url: split.base,
+    params: split.params,
+    headers: headers.filter((h) => h.key.toLowerCase() !== "authorization" || auth.type === "none"),
+    auth,
+    bodyMode: body ? (isJson ? "json" : "raw") : "none",
+    body,
+  });
+}
+
+// ─── проверки (Tests) ────────────────────────────────────────────────────────────
+export interface AssertResult {
+  assertion: Assertion;
+  ok: boolean;
+  actual: string;
+  label: string;
+}
+export function runAssertions(tests: Assertion[], response: ResponseData): AssertResult[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(response.body);
+  } catch {
+    parsed = undefined;
+  }
+  return (tests ?? []).map((a) => {
+    if (a.kind === "status") {
+      const actual = String(response.status);
+      return { assertion: a, ok: actual === (a.expected ?? "200"), actual, label: `Статус = ${a.expected ?? "200"}` };
+    }
+    if (a.kind === "time") {
+      const ok = response.ms <= Number(a.expected ?? "1000");
+      return { assertion: a, ok, actual: `${response.ms}ms`, label: `Время ≤ ${a.expected ?? "1000"}ms` };
+    }
+    const val = getByPath(parsed, a.path ?? "");
+    const actual = toStringVal(val);
+    if (a.kind === "hasPath") {
+      return { assertion: a, ok: val !== undefined && val !== null, actual, label: `Есть поле «${a.path}»` };
+    }
+    if (a.kind === "equals") {
+      return { assertion: a, ok: actual === (a.expected ?? ""), actual, label: `«${a.path}» = ${a.expected}` };
+    }
+    // contains
+    return { assertion: a, ok: actual.includes(a.expected ?? ""), actual, label: `«${a.path}» содержит ${a.expected}` };
+  });
+}
+
+// ─── экспорт коллекции в Postman v2.1 ────────────────────────────────────────────
+function reqToPm(r: ApiRequest) {
+  const headerArr = r.headers.filter((h) => h.key).map((h) => ({ key: h.key, value: h.value, disabled: !h.enabled }));
+  const bodyObj =
+    r.bodyMode === "json" || r.bodyMode === "raw"
+      ? { mode: "raw" as const, raw: r.body, options: { raw: { language: r.bodyMode === "json" ? "json" : "text" } } }
+      : r.bodyMode === "urlencoded"
+        ? { mode: "urlencoded" as const, urlencoded: r.form.map((f) => ({ key: f.key, value: f.value, disabled: !f.enabled })) }
+        : r.bodyMode === "form"
+          ? { mode: "formdata" as const, formdata: r.form.map((f) => ({ key: f.key, value: f.value, disabled: !f.enabled })) }
+          : undefined;
+  return {
+    name: r.name,
+    request: {
+      method: r.method,
+      header: headerArr,
+      url: { raw: joinUrl(r.url, r.params), query: r.params.map((p) => ({ key: p.key, value: p.value, disabled: !p.enabled })) },
+      ...(bodyObj ? { body: bodyObj } : {}),
+    },
+  };
+}
+export function exportPostman(collection: Collection): unknown {
+  return {
+    info: { name: collection.name, schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    item: [
+      ...collection.requests.map(reqToPm),
+      ...collection.folders.map((f) => ({ name: f.name, item: f.requests.map(reqToPm) })),
+    ],
+  };
 }
 
 // ─── подсветка JSON ──────────────────────────────────────────────────────────────
@@ -569,17 +896,22 @@ function parsePmRequest(item: PmItem): ApiRequest {
       ? { type: "bearer", token: r.auth.bearer?.find((b) => b.key === "token")?.value ?? "" }
       : { type: "none" };
   const q = typeof r.url === "object" ? r.url.query ?? [] : [];
+  // Параметры берём из query (или из строки URL), а сам URL храним без «?…» —
+  // чтобы не дублировать query при отправке.
+  const split = splitUrl(url);
+  const params = q.length ? q.map((p) => kv(p.key, p.value, !p.disabled)) : split.params;
   return {
     id: uid(),
     name: item.name ?? r.method ?? "Запрос",
     method: (r.method?.toUpperCase() as HttpMethod) ?? "GET",
-    url,
-    params: q.map((p) => kv(p.key, p.value, !p.disabled)),
+    url: split.base,
+    params,
     headers: (r.header ?? []).map((h) => kv(h.key, h.value, !h.disabled)),
     auth,
     bodyMode,
     body: r.body?.raw ?? "",
     form: form.map((f) => kv(f.key, f.value, !f.disabled)),
+    tests: [],
   };
 }
 
@@ -744,6 +1076,27 @@ export function defaultState(): ConsoleState {
   };
 }
 
+/** Переносит query из URL в параметры (чтобы не дублировать «?…» при отправке). */
+function normReq(r: ApiRequest): ApiRequest {
+  if (!r?.url || !r.url.includes("?")) return r;
+  const { base, params } = splitUrl(r.url);
+  return { ...r, url: base, params: r.params?.length ? r.params : params };
+}
+export function normalizeRequestUrls(s: ConsoleState): ConsoleState {
+  return {
+    ...s,
+    collections: (s.collections ?? []).map((c) => ({
+      ...c,
+      requests: (c.requests ?? []).map(normReq),
+      folders: (c.folders ?? []).map((f) => ({ ...f, requests: (f.requests ?? []).map(normReq) })),
+    })),
+    flows: (s.flows ?? []).map((f) => ({
+      ...f,
+      steps: (f.steps ?? []).map((st) => ({ ...st, request: normReq(st.request) })),
+    })),
+  };
+}
+
 export function loadState(userId: string): ConsoleState {
   if (typeof window === "undefined") return defaultState();
   try {
@@ -753,7 +1106,7 @@ export function loadState(userId: string): ConsoleState {
     if (!parsed.collections?.length) parsed.collections = [seedBulutCollection()];
     if (!parsed.environments?.length) return defaultState();
     if (!parsed.flows) parsed.flows = [];
-    return parsed;
+    return normalizeRequestUrls(parsed);
   } catch {
     return defaultState();
   }

@@ -73,11 +73,18 @@ export async function POST(req: NextRequest) {
     const outHeaders: Record<string, string> = {};
     res.headers.forEach((v, k) => (outHeaders[k] = v));
 
+    // Set-Cookie отдельным массивом (для cookie jar на клиенте)
+    let setCookies: string[] = [];
+    const h = res.headers as Headers & { getSetCookie?: () => string[] };
+    if (typeof h.getSetCookie === "function") setCookies = h.getSetCookie();
+    else if (outHeaders["set-cookie"]) setCookies = [outHeaders["set-cookie"]];
+
     return Response.json({
       status: res.status,
       statusText: res.statusText,
       headers: outHeaders,
       body: text,
+      setCookies,
       ms: Date.now() - started,
     });
   } catch (e) {

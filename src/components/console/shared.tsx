@@ -1,8 +1,8 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { Plus, X, FileUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { kv, type ApiRequest, type KV, type BodyMode, type AuthType } from "@/lib/console";
+import { kv, fileStore, type ApiRequest, type KV, type BodyMode, type AuthType } from "@/lib/console";
 
 export const METHOD_COLOR: Record<string, string> = {
   GET: "#10b981",
@@ -61,6 +61,7 @@ export function AuthEditor({ req, onChange }: { req: ApiRequest; onChange: (patc
           <option value="none">Без авторизации</option>
           <option value="bearer">Bearer-токен</option>
           <option value="basic">Basic (логин/пароль)</option>
+          <option value="apikey">API-ключ (в заголовок/query)</option>
         </select>
       </div>
       {type === "bulut" && (
@@ -72,6 +73,27 @@ export function AuthEditor({ req, onChange }: { req: ApiRequest; onChange: (patc
         <div>
           <label className="label">Токен</label>
           <input className="input font-mono text-xs" value={req.auth.token ?? ""} onChange={(e) => onChange({ auth: { ...req.auth, token: e.target.value } })} placeholder="eyJhbGciOi… или {{token}}" />
+        </div>
+      )}
+      {type === "apikey" && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">Имя (ключ)</label>
+              <input className="input font-mono text-xs" value={req.auth.key ?? ""} onChange={(e) => onChange({ auth: { ...req.auth, key: e.target.value } })} placeholder="X-API-Key" />
+            </div>
+            <div>
+              <label className="label">Значение</label>
+              <input className="input font-mono text-xs" value={req.auth.value ?? ""} onChange={(e) => onChange({ auth: { ...req.auth, value: e.target.value } })} placeholder="ключ или {{api_key}}" />
+            </div>
+          </div>
+          <div>
+            <label className="label">Куда</label>
+            <select className="input" value={req.auth.addTo ?? "header"} onChange={(e) => onChange({ auth: { ...req.auth, addTo: e.target.value as "header" | "query" } })}>
+              <option value="header">В заголовок</option>
+              <option value="query">В query-параметр</option>
+            </select>
+          </div>
         </div>
       )}
       {type === "basic" && (
@@ -124,10 +146,68 @@ export function BodyEditor({ req, onChange }: { req: ApiRequest; onChange: (patc
           spellCheck={false}
         />
       )}
-      {(req.bodyMode === "form" || req.bodyMode === "urlencoded") && (
+      {req.bodyMode === "urlencoded" && (
         <KVEditor rows={req.form} onChange={(form) => onChange({ form })} kPlaceholder="поле" vPlaceholder="значение" />
       )}
+      {req.bodyMode === "form" && <FormDataEditor rows={req.form} onChange={(form) => onChange({ form })} />}
       {req.bodyMode === "none" && <p className="text-xs text-muted">Тело не отправляется.</p>}
+    </div>
+  );
+}
+
+// ─── form-data (текст + файлы) ────────────────────────────────────────────────────
+function FormDataEditor({ rows, onChange }: { rows: KV[]; onChange: (rows: KV[]) => void }) {
+  const set = (id: string, patch: Partial<KV>) => onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, kv()]);
+  const remove = (id: string) => {
+    fileStore.delete(id);
+    onChange(rows.filter((r) => r.id !== id));
+  };
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-muted">Файлы поддерживаются для своего API (Bulut). Отметьте «файл» у строки.</p>
+      {rows.map((r) => (
+        <div key={r.id} className="flex items-center gap-1.5">
+          <input type="checkbox" checked={r.enabled} onChange={(e) => set(r.id, { enabled: e.target.checked })} className="h-4 w-4 accent-[color:rgb(var(--brand))]" />
+          <input value={r.key} onChange={(e) => set(r.id, { key: e.target.value })} placeholder="поле" className="input w-28 py-1.5 font-mono text-xs" spellCheck={false} />
+          {r.isFile ? (
+            <label className="flex flex-1 cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border px-2 py-1.5 text-xs text-muted hover:border-brand">
+              <FileUp className="h-3.5 w-3.5" />
+              <span className="truncate">{fileStore.get(r.id)?.name ?? "выбрать файл…"}</span>
+              <input
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    fileStore.set(r.id, f);
+                    set(r.id, { value: f.name });
+                  }
+                }}
+              />
+            </label>
+          ) : (
+            <input value={r.value} onChange={(e) => set(r.id, { value: e.target.value })} placeholder="значение" className="input flex-1 py-1.5 font-mono text-xs" spellCheck={false} />
+          )}
+          <button
+            onClick={() => {
+              const next = !r.isFile;
+              if (!next) fileStore.delete(r.id);
+              set(r.id, { isFile: next, value: "" });
+            }}
+            className={cn("rounded px-1.5 py-1 text-[10px] font-semibold", r.isFile ? "bg-brand/10 text-brand" : "text-faint hover:text-fg")}
+            title="Тип: текст / файл"
+          >
+            файл
+          </button>
+          <button onClick={() => remove(r.id)} className="rounded p-1 text-faint hover:bg-red-500/10 hover:text-red-500">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+        <Plus className="h-3.5 w-3.5" /> Добавить строку
+      </button>
     </div>
   );
 }

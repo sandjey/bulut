@@ -15,9 +15,16 @@ import {
   Eye,
   Pencil,
   FolderClosed,
+  FolderPlus,
   Settings2,
   Server,
   Workflow,
+  Download,
+  ArrowUp,
+  ArrowDown,
+  MoreHorizontal,
+  Search,
+  Cookie,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
@@ -33,8 +40,6 @@ import {
   buildVarMap,
   buildFinal,
   execute,
-  toCurl,
-  highlightJson,
   flattenJson,
   getByPath,
   toStringVal,
@@ -43,6 +48,17 @@ import {
   requestVars,
   emptyRequest,
   seedBulutCollection,
+  splitUrl,
+  joinUrl,
+  parseCurl,
+  exportPostman,
+  generateCode,
+  CODE_LANGS,
+  runAssertions,
+  normalizeRequestUrls,
+  clearCookies,
+  cookieCount,
+  fileStore,
   kv,
   uid,
   HTTP_METHODS,
@@ -52,6 +68,9 @@ import {
   type ResponseData,
   type HttpMethod,
   type Flow,
+  type Collection,
+  type Assertion,
+  type CodeLang,
 } from "@/lib/console";
 
 // ─── поиск/обновление запроса в дереве ─────────────────────────────────────────
@@ -80,10 +99,13 @@ export default function ConsolePage() {
   const [response, setResponse] = useState<ResponseData | null>(null);
   const [sending, setSending] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
-  const [tab, setTab] = useState<"params" | "headers" | "auth" | "body">("params");
+  const [tab, setTab] = useState<"params" | "headers" | "auth" | "body" | "tests">("params");
   const [resTab, setResTab] = useState<"body" | "raw" | "headers" | "pick">("body");
   const [logOpen, setLogOpen] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
+  const [curlOpen, setCurlOpen] = useState(false);
+  const [codeLang, setCodeLang] = useState<CodeLang | null>(null);
+  const [cookieN, setCookieN] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const loadedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,6 +129,7 @@ export default function ConsolePage() {
           flows: r.flows ?? local.flows ?? [],
         };
       }
+      s = normalizeRequestUrls(s);
       setState(s);
       const first = s.collections[0]?.requests[0] ?? s.collections[0]?.folders[0]?.requests[0] ?? null;
       setSelectedId(first?.id ?? null);
@@ -145,6 +168,7 @@ export default function ConsolePage() {
   useEffect(() => {
     const sb = getSupabase();
     sb?.auth.getSession().then(({ data }) => setToken(data.session?.access_token ?? ""));
+    setCookieN(cookieCount());
   }, []);
 
   const activeEnv = useMemo(
@@ -211,6 +235,69 @@ export default function ConsolePage() {
   const deleteCollection = (id: string) =>
     setState((s) => ({ ...s, collections: s.collections.filter((c) => c.id !== id) }));
 
+  // управление коллекциями/папками/запросами
+  const mapList = (cols: Collection[], id: string, fn: (arr: ApiRequest[]) => ApiRequest[]) =>
+    cols.map((c) => {
+      if (c.requests.some((r) => r.id === id)) return { ...c, requests: fn(c.requests) };
+      return { ...c, folders: c.folders.map((f) => (f.requests.some((r) => r.id === id) ? { ...f, requests: fn(f.requests) } : f)) };
+    });
+  const duplicateReq = (id: string) => {
+    const src = findRequest(state, id);
+    if (!src) return;
+    const copy: ApiRequest = { ...JSON.parse(JSON.stringify(src)), id: uid(), name: `${src.name} (копия)` };
+    setState((s) => ({
+      ...s,
+      collections: mapList(s.collections, id, (arr) => {
+        const i = arr.findIndex((r) => r.id === id);
+        const a = [...arr];
+        a.splice(i + 1, 0, copy);
+        return a;
+      }),
+    }));
+    setSelectedId(copy.id);
+  };
+  const reorderReq = (id: string, dir: -1 | 1) =>
+    setState((s) => ({
+      ...s,
+      collections: mapList(s.collections, id, (arr) => {
+        const i = arr.findIndex((r) => r.id === id);
+        const j = i + dir;
+        if (j < 0 || j >= arr.length) return arr;
+        const a = [...arr];
+        [a[i], a[j]] = [a[j], a[i]];
+        return a;
+      }),
+    }));
+  const moveReq = (id: string, toColId: string, toFolderId: string | null) => {
+    const src = findRequest(state, id);
+    if (!src) return;
+    setState((s) => {
+      let cols = s.collections.map((c) => ({
+        ...c,
+        requests: c.requests.filter((r) => r.id !== id),
+        folders: c.folders.map((f) => ({ ...f, requests: f.requests.filter((r) => r.id !== id) })),
+      }));
+      cols = cols.map((c) => {
+        if (c.id !== toColId) return c;
+        if (toFolderId) return { ...c, folders: c.folders.map((f) => (f.id === toFolderId ? { ...f, requests: [...f.requests, src] } : f)) };
+        return { ...c, requests: [...c.requests, src] };
+      });
+      return { ...s, collections: cols };
+    });
+  };
+  const renameCollection = (id: string, name: string) =>
+    setState((s) => ({ ...s, collections: s.collections.map((c) => (c.id === id ? { ...c, name } : c)) }));
+  const renameFolder = (colId: string, fid: string, name: string) =>
+    setState((s) => ({
+      ...s,
+      collections: s.collections.map((c) => (c.id === colId ? { ...c, folders: c.folders.map((f) => (f.id === fid ? { ...f, name } : f)) } : c)),
+    }));
+  const addFolder = (colId: string) =>
+    setState((s) => ({
+      ...s,
+      collections: s.collections.map((c) => (c.id === colId ? { ...c, folders: [...c.folders, { id: uid(), name: "Новая папка", requests: [] }] } : c)),
+    }));
+
   const restoreBulut = () =>
     setState((s) => ({ ...s, collections: [seedBulutCollection(), ...s.collections] }));
 
@@ -239,36 +326,86 @@ export default function ConsolePage() {
 
   // ── отправка ──
   const send = async () => {
-    if (!current || !final) return;
+    if (!current) return;
     const isWrite = current.method !== "GET" && current.method !== "HEAD";
     if (isWrite && readOnly) {
       alert("Включён режим «Только чтение». Снимите его, чтобы отправлять изменяющие запросы.");
       return;
     }
     setSending(true);
-    const res = await execute(final);
+    // свежий токен сессии (не протухший) для Bulut-авторизации
+    let tok = token;
+    if (current.auth.type === "bulut") {
+      try {
+        const { data } = (await getSupabase()?.auth.getSession()) ?? { data: { session: null } };
+        if (data.session?.access_token) {
+          tok = data.session.access_token;
+          setToken(tok);
+        }
+      } catch {
+        /* оставим текущий */
+      }
+    }
+    const vmap = buildVarMap(activeEnv, {
+      base_url: typeof window !== "undefined" ? window.location.origin : "",
+      workspace_id: wsId ?? "",
+      bulut_token: tok,
+    });
+    const f = buildFinal(current, vmap, tok, wsId ?? "");
+    // form-data с файлами → multipart
+    let formData: FormData | undefined;
+    if (current.bodyMode === "form" && current.form.some((r) => r.isFile && fileStore.get(r.id))) {
+      formData = new FormData();
+      current.form
+        .filter((r) => r.enabled && r.key)
+        .forEach((r) => {
+          if (r.isFile) {
+            const file = fileStore.get(r.id);
+            if (file) formData!.append(r.key, file);
+          } else {
+            formData!.append(r.key, r.value);
+          }
+        });
+    }
+    const res = await execute(f, formData);
     setSending(false);
     setResponse(res);
     setResTab("body");
+    setCookieN(cookieCount());
     setState((s) => ({
       ...s,
       history: [
-        {
-          id: uid(),
-          at: Date.now(),
-          method: current.method,
-          url: final.url,
-          status: res.status,
-          ms: res.ms,
-          ok: res.ok,
-        },
+        { id: uid(), at: Date.now(), method: current.method, url: f.url, status: res.status, ms: res.ms, ok: res.ok },
         ...s.history,
       ].slice(0, 50),
     }));
   };
 
-  const copyCurl = () => {
-    if (final) navigator.clipboard?.writeText(toCurl(final));
+  const copyCode = (lang: CodeLang) => {
+    if (final) navigator.clipboard?.writeText(generateCode(final, lang));
+    setCodeLang(null);
+  };
+  const doExport = (col: Collection) => {
+    const blob = new Blob([JSON.stringify(exportPostman(col), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${col.name || "collection"}.postman_collection.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const importCurl = (text: string) => {
+    const req = parseCurl(text);
+    if (!req) {
+      alert("Не похоже на команду curl. Проверьте текст.");
+      return;
+    }
+    setState((s) => {
+      const cols = s.collections.length ? s.collections : [{ id: uid(), name: "Импорт", folders: [], requests: [] }];
+      const firstId = cols[0].id;
+      return { ...s, collections: cols.map((c) => (c.id === firstId ? { ...c, requests: [...c.requests, req] } : c)) };
+    });
+    setSelectedId(req.id);
+    setCurlOpen(false);
   };
 
   // управление переменными активного окружения (задать/удалить)
@@ -370,11 +507,28 @@ export default function ConsolePage() {
             <span className="hidden sm:inline">{readOnly ? "Только чтение" : "Изменения вкл."}</span>
           </button>
 
+          {cookieN > 0 && (
+            <button
+              onClick={() => {
+                if (confirm("Очистить сохранённые куки внешних API?")) {
+                  clearCookies();
+                  setCookieN(0);
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-sm text-muted hover:text-fg"
+              title="Куки внешних API — клик, чтобы очистить"
+            >
+              <Cookie className="h-4 w-4" /> {cookieN}
+            </button>
+          )}
+
           <button onClick={() => setLogOpen((v) => !v)} className="btn-outline text-sm" title="Журнал запросов">
             <TerminalSquare className="h-4 w-4" /> Консоль
           </button>
         </div>
       </div>
+
+      <CurlModal open={curlOpen} onClose={() => setCurlOpen(false)} onImport={importCurl} />
 
       {/* редактор окружения */}
       {envOpen && activeEnv && (
@@ -420,6 +574,9 @@ export default function ConsolePage() {
           <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
             <span className="px-1 text-xs font-semibold uppercase tracking-wide text-faint">Коллекции</span>
             <div className="ml-auto flex items-center gap-0.5">
+              <button onClick={() => setCurlOpen(true)} className="rounded px-1.5 py-1 text-[10px] font-bold text-muted hover:bg-surface-2 hover:text-fg" title="Импорт из cURL">
+                cURL
+              </button>
               <button onClick={() => fileRef.current?.click()} className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-fg" title="Импорт Postman (JSON)">
                 <Upload className="h-4 w-4" />
               </button>
@@ -443,11 +600,19 @@ export default function ConsolePage() {
               <CollectionTree
                 key={col.id}
                 collection={col}
+                collections={state.collections}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onAddRequest={() => addRequest(col.id)}
+                onAddFolder={() => addFolder(col.id)}
                 onDeleteCollection={() => deleteCollection(col.id)}
+                onRenameCollection={(name) => renameCollection(col.id, name)}
+                onRenameFolder={renameFolder}
+                onExport={() => doExport(col)}
                 onDeleteRequest={deleteReq}
+                onDuplicate={duplicateReq}
+                onReorder={reorderReq}
+                onMove={moveReq}
               />
             ))}
           </div>
@@ -484,8 +649,11 @@ export default function ConsolePage() {
                     ))}
                   </select>
                   <input
-                    value={current.url}
-                    onChange={(e) => updateReq(current.id, { url: e.target.value })}
+                    value={joinUrl(current.url, current.params)}
+                    onChange={(e) => {
+                      const { base, params } = splitUrl(e.target.value);
+                      updateReq(current.id, { url: base, params });
+                    }}
                     className="input flex-1 font-mono text-sm"
                     placeholder="/api/tasks"
                     spellCheck={false}
@@ -494,9 +662,24 @@ export default function ConsolePage() {
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     Отправить
                   </button>
-                  <button onClick={copyCurl} className="btn-outline shrink-0" title="Скопировать как curl">
-                    <Copy className="h-4 w-4" />
-                  </button>
+                  <div className="relative shrink-0">
+                    <button onClick={() => setCodeLang((v) => (v ? null : "curl"))} className="btn-outline" title="Скопировать как код">
+                      <Copy className="h-4 w-4" />
+                    </button>
+                    {codeLang && (
+                      <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-lg border border-border bg-surface p-1 shadow-md">
+                        {CODE_LANGS.map((l) => (
+                          <button
+                            key={l.key}
+                            onClick={() => copyCode(l.key)}
+                            className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-surface-2"
+                          >
+                            Скопировать: {l.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {final && (
                   <p className="truncate font-mono text-[11px] text-faint" title={final.url}>
@@ -514,6 +697,7 @@ export default function ConsolePage() {
                     ["headers", `Заголовки${current.headers.length ? ` (${current.headers.length})` : ""}`],
                     ["auth", "Авторизация"],
                     ["body", "Тело"],
+                    ["tests", `Проверки${current.tests?.length ? ` (${current.tests.length})` : ""}`],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -538,10 +722,13 @@ export default function ConsolePage() {
                 )}
                 {tab === "auth" && <AuthEditor req={current} onChange={(patch) => updateReq(current.id, patch)} />}
                 {tab === "body" && <BodyEditor req={current} onChange={(patch) => updateReq(current.id, patch)} />}
+                {tab === "tests" && (
+                  <TestsEditor tests={current.tests ?? []} onChange={(tests) => updateReq(current.id, { tests })} results={response ? runAssertions(current.tests ?? [], response) : []} />
+                )}
               </div>
 
               {/* ответ */}
-              <ResponseView response={response} tab={resTab} setTab={setResTab} onSaveVar={setVar} envName={activeEnv?.name} />
+              <ResponseView response={response} tab={resTab} setTab={setResTab} onSaveVar={setVar} envName={activeEnv?.name} tests={current.tests ?? []} />
             </>
           )}
         </main>
@@ -579,28 +766,79 @@ export default function ConsolePage() {
 }
 
 // ─── дерево коллекции ─────────────────────────────────────────────────────────
-function CollectionTree({
-  collection,
-  selectedId,
-  onSelect,
-  onAddRequest,
-  onDeleteCollection,
-  onDeleteRequest,
-}: {
-  collection: { id: string; name: string; folders: { id: string; name: string; requests: ApiRequest[] }[]; requests: ApiRequest[] };
+interface TreeActions {
+  collections: Collection[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onAddRequest: () => void;
-  onDeleteCollection: () => void;
   onDeleteRequest: (id: string) => void;
-}) {
+  onDuplicate: (id: string) => void;
+  onReorder: (id: string, dir: -1 | 1) => void;
+  onMove: (id: string, colId: string, folderId: string | null) => void;
+  onRenameFolder: (colId: string, fid: string, name: string) => void;
+}
+
+/** Инлайн-редактируемое название (двойной клик). */
+function EditableName({ value, onSave, className }: { value: string; onSave: (v: string) => void; className?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          onSave(draft.trim() || value);
+          setEditing(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        className="min-w-0 flex-1 rounded bg-surface px-1 text-[13px] outline-none ring-1 ring-brand"
+        onClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <span className={cn("truncate", className)} onDoubleClick={() => { setDraft(value); setEditing(true); }} title="Двойной клик — переименовать">
+      {value}
+    </span>
+  );
+}
+
+function CollectionTree({
+  collection,
+  onAddRequest,
+  onAddFolder,
+  onDeleteCollection,
+  onRenameCollection,
+  onExport,
+  ...a
+}: {
+  collection: Collection;
+  onAddRequest: () => void;
+  onAddFolder: () => void;
+  onDeleteCollection: () => void;
+  onRenameCollection: (name: string) => void;
+  onExport: () => void;
+} & TreeActions) {
   const [open, setOpen] = useState(true);
   return (
     <div className="mb-1">
       <div className="group flex items-center gap-1 rounded-lg px-1.5 py-1 hover:bg-surface-2">
-        <button onClick={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-1 text-left">
-          {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />}
-          <span className="truncate text-[13px] font-semibold">{collection.name}</span>
+        <button onClick={() => setOpen((v) => !v)} className="shrink-0">
+          {open ? <ChevronDown className="h-3.5 w-3.5 text-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-muted" />}
+        </button>
+        <EditableName value={collection.name} onSave={onRenameCollection} className="flex-1 text-[13px] font-semibold" />
+        <button onClick={onExport} className="rounded p-0.5 text-faint opacity-0 hover:bg-surface-3 hover:text-fg group-hover:opacity-100" title="Экспорт (Postman JSON)">
+          <Download className="h-3.5 w-3.5" />
+        </button>
+        <button onClick={onAddFolder} className="rounded p-0.5 text-faint opacity-0 hover:bg-surface-3 hover:text-fg group-hover:opacity-100" title="Новая папка">
+          <FolderPlus className="h-3.5 w-3.5" />
         </button>
         <button onClick={onAddRequest} className="rounded p-0.5 text-faint opacity-0 hover:bg-surface-3 hover:text-fg group-hover:opacity-100" title="Добавить запрос">
           <Plus className="h-3.5 w-3.5" />
@@ -612,10 +850,10 @@ function CollectionTree({
       {open && (
         <div className="ml-2 border-l border-border pl-1">
           {collection.requests.map((r) => (
-            <RequestRow key={r.id} req={r} active={r.id === selectedId} onSelect={() => onSelect(r.id)} onDelete={() => onDeleteRequest(r.id)} />
+            <RequestRow key={r.id} req={r} a={a} />
           ))}
           {collection.folders.map((f) => (
-            <FolderRow key={f.id} folder={f} selectedId={selectedId} onSelect={onSelect} onDeleteRequest={onDeleteRequest} />
+            <FolderRow key={f.id} colId={collection.id} folder={f} a={a} />
           ))}
         </div>
       )}
@@ -623,29 +861,21 @@ function CollectionTree({
   );
 }
 
-function FolderRow({
-  folder,
-  selectedId,
-  onSelect,
-  onDeleteRequest,
-}: {
-  folder: { id: string; name: string; requests: ApiRequest[] };
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-  onDeleteRequest: (id: string) => void;
-}) {
+function FolderRow({ colId, folder, a }: { colId: string; folder: { id: string; name: string; requests: ApiRequest[] }; a: TreeActions }) {
   const [open, setOpen] = useState(true);
   return (
     <div>
-      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-1 rounded-lg px-1.5 py-1 text-left hover:bg-surface-2">
-        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />}
+      <div className="group flex items-center gap-1 rounded-lg px-1.5 py-1 hover:bg-surface-2">
+        <button onClick={() => setOpen((v) => !v)} className="shrink-0">
+          {open ? <ChevronDown className="h-3.5 w-3.5 text-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-muted" />}
+        </button>
         <FolderClosed className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-        <span className="truncate text-[13px] text-muted">{folder.name}</span>
-      </button>
+        <EditableName value={folder.name} onSave={(name) => a.onRenameFolder(colId, folder.id, name)} className="flex-1 text-[13px] text-muted" />
+      </div>
       {open && (
         <div className="ml-2 border-l border-border pl-1">
           {folder.requests.map((r) => (
-            <RequestRow key={r.id} req={r} active={r.id === selectedId} onSelect={() => onSelect(r.id)} onDelete={() => onDeleteRequest(r.id)} />
+            <RequestRow key={r.id} req={r} a={a} />
           ))}
         </div>
       )}
@@ -653,18 +883,57 @@ function FolderRow({
   );
 }
 
-function RequestRow({ req, active, onSelect, onDelete }: { req: ApiRequest; active: boolean; onSelect: () => void; onDelete: () => void }) {
+function RequestRow({ req, a }: { req: ApiRequest; a: TreeActions }) {
+  const [menu, setMenu] = useState(false);
+  const active = req.id === a.selectedId;
+  const targets = a.collections.flatMap((c) => [
+    { colId: c.id, folderId: null as string | null, label: c.name },
+    ...c.folders.map((f) => ({ colId: c.id, folderId: f.id, label: `${c.name} / ${f.name}` })),
+  ]);
   return (
-    <div className={cn("group flex items-center gap-1.5 rounded-lg px-1.5 py-1", active ? "bg-brand/10" : "hover:bg-surface-2")}>
-      <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+    <div className={cn("group relative flex items-center gap-1.5 rounded-lg px-1.5 py-1", active ? "bg-brand/10" : "hover:bg-surface-2")}>
+      <button onClick={() => a.onSelect(req.id)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
         <span className="w-11 shrink-0 text-right font-mono text-[10px] font-bold" style={{ color: METHOD_COLOR[req.method] }}>
           {req.method}
         </span>
         <span className={cn("truncate text-[13px]", active ? "font-semibold text-fg" : "text-muted")}>{req.name}</span>
       </button>
-      <button onClick={onDelete} className="rounded p-0.5 text-faint opacity-0 hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100" title="Удалить">
-        <Trash2 className="h-3 w-3" />
+      <button onClick={() => a.onReorder(req.id, -1)} className="rounded p-0.5 text-faint opacity-0 hover:text-fg group-hover:opacity-100" title="Выше">
+        <ArrowUp className="h-3 w-3" />
       </button>
+      <button onClick={() => a.onReorder(req.id, 1)} className="rounded p-0.5 text-faint opacity-0 hover:text-fg group-hover:opacity-100" title="Ниже">
+        <ArrowDown className="h-3 w-3" />
+      </button>
+      <button onClick={() => setMenu((v) => !v)} className="rounded p-0.5 text-faint opacity-0 hover:text-fg group-hover:opacity-100" title="Ещё">
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+      {menu && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+          <div className="absolute right-1 top-full z-20 mt-0.5 w-48 rounded-lg border border-border bg-surface p-1 text-xs shadow-md">
+            <button onClick={() => { a.onDuplicate(req.id); setMenu(false); }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-surface-2">
+              <Copy className="h-3.5 w-3.5" /> Дублировать
+            </button>
+            <div className="my-1 border-t border-border" />
+            <div className="px-2 py-0.5 text-[10px] uppercase tracking-wide text-faint">Переместить в</div>
+            <div className="max-h-40 overflow-y-auto">
+              {targets.map((t) => (
+                <button
+                  key={`${t.colId}:${t.folderId}`}
+                  onClick={() => { a.onMove(req.id, t.colId, t.folderId); setMenu(false); }}
+                  className="block w-full truncate rounded px-2 py-1 text-left hover:bg-surface-2"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="my-1 border-t border-border" />
+            <button onClick={() => { a.onDeleteRequest(req.id); setMenu(false); }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-red-500 hover:bg-red-500/10">
+              <Trash2 className="h-3.5 w-3.5" /> Удалить
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -676,13 +945,16 @@ function ResponseView({
   setTab,
   onSaveVar,
   envName,
+  tests,
 }: {
   response: ResponseData | null;
   tab: "body" | "raw" | "headers" | "pick";
   setTab: (t: "body" | "raw" | "headers" | "pick") => void;
   onSaveVar: (name: string, value: string) => void;
   envName?: string;
+  tests: Assertion[];
 }) {
+  const [q, setQ] = useState("");
   if (!response) {
     return (
       <div className="flex h-40 shrink-0 items-center justify-center border-t border-border text-xs text-faint">
@@ -697,32 +969,52 @@ function ResponseView({
       : response.status >= 400
         ? "#ef4444"
         : "#f59e0b";
+  const results = runAssertions(tests, response);
+  const passed = results.filter((r) => r.ok).length;
   return (
-    <div className="flex h-[38%] min-h-[180px] shrink-0 flex-col border-t border-border">
+    <div className="flex h-[42%] min-h-[200px] shrink-0 flex-col border-t border-border">
       <div className="flex items-center gap-3 border-b border-border px-3 py-1.5 text-xs">
         <span className="font-bold" style={{ color: statusColor }}>
           {response.error ? "Ошибка" : `${response.status} ${response.statusText}`}
         </span>
         <span className="text-muted">{response.ms} ms</span>
         <span className="text-muted">{(response.sizeBytes / 1024).toFixed(1)} KB</span>
-        <div className="ml-auto flex gap-1">
+        {results.length > 0 && (
+          <span className={cn("rounded-full px-2 py-0.5 font-semibold", passed === results.length ? "bg-emerald-500/15 text-emerald-600" : "bg-red-500/15 text-red-500")}>
+            Проверки: {passed}/{results.length}
+          </span>
+        )}
+        {(tab === "body" || tab === "raw") && (
+          <div className="ml-auto flex items-center gap-1 rounded border border-border px-1.5">
+            <Search className="h-3 w-3 text-faint" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="поиск" className="w-24 bg-transparent py-0.5 text-xs outline-none" />
+          </div>
+        )}
+        <div className={cn("flex gap-1", (tab === "body" || tab === "raw") ? "" : "ml-auto")}>
           {(["body", "pick", "raw", "headers"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={cn("rounded px-2 py-0.5 transition", tab === t ? "bg-brand/10 font-semibold text-fg" : "text-muted hover:text-fg")}
             >
-              {t === "body"
-                ? "Тело"
-                : t === "pick"
-                  ? "Взять значение"
-                  : t === "raw"
-                    ? "Сырое"
-                    : `Заголовки (${Object.keys(response.headers).length})`}
+              {t === "body" ? "Тело" : t === "pick" ? "Взять значение" : t === "raw" ? "Сырое" : `Заголовки (${Object.keys(response.headers).length})`}
             </button>
           ))}
         </div>
       </div>
+      {results.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-1.5">
+          {results.map((r) => (
+            <span
+              key={r.assertion.id}
+              className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]", r.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500")}
+              title={`Факт: ${r.actual}`}
+            >
+              {r.ok ? "✓" : "✗"} {r.label}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {response.error ? (
           <p className="text-sm text-red-500">{response.error}</p>
@@ -736,11 +1028,11 @@ function ResponseView({
             ))}
           </div>
         ) : tab === "raw" ? (
-          <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg">{response.body}</pre>
+          <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg">{filterText(response.body, q)}</pre>
         ) : tab === "pick" ? (
           <ResponseVarPicker body={response.body} onSave={onSaveVar} envName={envName} />
         ) : (
-          <pre className="json-view whitespace-pre-wrap break-all text-xs" dangerouslySetInnerHTML={{ __html: highlightJson(response.body) }} />
+          <ResponseBody body={response.body} q={q} />
         )}
       </div>
     </div>
@@ -980,6 +1272,173 @@ function VariablesBar({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── просмотр тела ответа (дерево / поиск / копирование) ──────────────────────────
+function filterText(text: string, q: string): string {
+  if (!q.trim()) return text;
+  const lines = text.split("\n").filter((l) => l.toLowerCase().includes(q.toLowerCase()));
+  return lines.length ? lines.join("\n") : "(ничего не найдено)";
+}
+
+function ResponseBody({ body, q }: { body: string; q: string }) {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(body);
+  } catch {
+    return <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg">{filterText(body, q)}</pre>;
+  }
+  if (q.trim()) {
+    const leaves = flattenJson(body).filter(
+      (l) => l.path.toLowerCase().includes(q.toLowerCase()) || l.preview.toLowerCase().includes(q.toLowerCase()),
+    );
+    if (!leaves.length) return <p className="text-xs text-faint">Ничего не найдено.</p>;
+    return (
+      <div className="space-y-0.5">
+        {leaves.map((l) => (
+          <div key={l.path} className="flex gap-2 font-mono text-xs">
+            <span className="shrink-0 font-semibold text-brand">{l.path}</span>
+            <span className="min-w-0 flex-1 truncate text-muted">{l.preview}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <JsonNode value={obj} name={null} path="" depth={0} />;
+}
+
+function JsonNode({ value, name, path, depth }: { value: unknown; name: string | null; path: string; depth: number }) {
+  const [open, setOpen] = useState(depth < 2);
+  const copy = (t: string) => navigator.clipboard?.writeText(t);
+  const isObj = value !== null && typeof value === "object";
+
+  if (!isObj) {
+    const color = typeof value === "string" ? "#10b981" : typeof value === "number" ? "#f59e0b" : value === null ? "#94a3b8" : "rgb(var(--brand-2))";
+    return (
+      <div className="group flex items-start gap-1 font-mono text-xs leading-relaxed">
+        {name !== null && <span className="shrink-0 text-brand">{name}:</span>}
+        <span className="min-w-0 break-all" style={{ color }}>
+          {typeof value === "string" ? `"${value}"` : String(value)}
+        </span>
+        <button onClick={() => copy(typeof value === "string" ? value : String(value))} className="shrink-0 text-faint opacity-0 hover:text-fg group-hover:opacity-100" title="Копировать значение">
+          <Copy className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+  const entries: [string, unknown][] = Array.isArray(value) ? value.map((v, i) => [String(i), v]) : Object.entries(value as Record<string, unknown>);
+  return (
+    <div className="font-mono text-xs">
+      <div className="group flex items-center gap-1">
+        <button onClick={() => setOpen((v) => !v)} className="shrink-0 text-muted">
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </button>
+        {name !== null && <span className="text-brand">{name}:</span>}
+        <span className="text-faint">{Array.isArray(value) ? `[${entries.length}]` : `{${entries.length}}`}</span>
+        {path && (
+          <button onClick={() => copy(path)} className="text-[9px] text-faint opacity-0 hover:text-fg group-hover:opacity-100" title="Копировать путь">
+            путь
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="ml-3 border-l border-border pl-2">
+          {entries.map(([k, v]) => (
+            <JsonNode key={k} value={v} name={k} path={path ? `${path}.${k}` : k} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── редактор проверок (Tests) ────────────────────────────────────────────────────
+function TestsEditor({
+  tests,
+  onChange,
+  results,
+}: {
+  tests: Assertion[];
+  onChange: (t: Assertion[]) => void;
+  results: ReturnType<typeof runAssertions>;
+}) {
+  const add = () => onChange([...tests, { id: uid(), kind: "status", expected: "200" }]);
+  const upd = (id: string, patch: Partial<Assertion>) => onChange(tests.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const del = (id: string) => onChange(tests.filter((t) => t.id !== id));
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted">Проверки выполняются после отправки — результат показывается над ответом (зелёное/красное).</p>
+      {tests.map((t) => {
+        const res = results.find((r) => r.assertion.id === t.id);
+        const needPath = t.kind === "hasPath" || t.kind === "equals" || t.kind === "contains";
+        return (
+          <div key={t.id} className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border p-2">
+            <select value={t.kind} onChange={(e) => upd(t.id, { kind: e.target.value as Assertion["kind"] })} className="input w-auto py-1 text-xs">
+              <option value="status">Статус =</option>
+              <option value="time">Время ≤ (мс)</option>
+              <option value="hasPath">Есть поле</option>
+              <option value="equals">Поле равно</option>
+              <option value="contains">Поле содержит</option>
+            </select>
+            {needPath && (
+              <input value={t.path ?? ""} onChange={(e) => upd(t.id, { path: e.target.value })} placeholder="путь (data.token)" className="input w-40 py-1 font-mono text-xs" />
+            )}
+            {t.kind !== "hasPath" && (
+              <input
+                value={t.expected ?? ""}
+                onChange={(e) => upd(t.id, { expected: e.target.value })}
+                placeholder={t.kind === "status" ? "200" : t.kind === "time" ? "1000" : "значение"}
+                className="input w-28 py-1 text-xs"
+              />
+            )}
+            {res && <span className={cn("text-sm font-bold", res.ok ? "text-emerald-600" : "text-red-500")}>{res.ok ? "✓" : "✗"}</span>}
+            <button onClick={() => del(t.id)} className="ml-auto rounded p-1 text-faint hover:bg-red-500/10 hover:text-red-500">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        );
+      })}
+      <button onClick={add} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+        <Plus className="h-3.5 w-3.5" /> Добавить проверку
+      </button>
+    </div>
+  );
+}
+
+// ─── модалка импорта из cURL ──────────────────────────────────────────────────────
+function CurlModal({ open, onClose, onImport }: { open: boolean; onClose: () => void; onImport: (text: string) => void }) {
+  const [text, setText] = useState("");
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+      <div className="relative w-full max-w-2xl rounded-2xl border border-border bg-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-sm font-bold">Импорт из cURL</span>
+          <button onClick={onClose} className="ml-auto rounded p-1 text-muted hover:bg-surface-2">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <p className="mb-2 text-xs text-muted">Вставь команду curl — создастся готовый запрос (метод, URL, заголовки, тело).</p>
+        <textarea
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={"curl -X POST 'https://api.site.com/login' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"phone\":\"...\"}'"}
+          className="input min-h-[160px] w-full resize-y font-mono text-xs"
+          spellCheck={false}
+        />
+        <div className="mt-3 flex justify-end gap-2">
+          <button onClick={onClose} className="btn-outline">
+            Отмена
+          </button>
+          <button onClick={() => onImport(text)} disabled={!text.trim()} className="btn-primary">
+            Создать запрос
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
