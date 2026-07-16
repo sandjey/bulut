@@ -35,6 +35,9 @@ import {
   execute,
   toCurl,
   highlightJson,
+  flattenJson,
+  getByPath,
+  toStringVal,
   importPostman,
   importPostmanEnv,
   requestVars,
@@ -78,7 +81,7 @@ export default function ConsolePage() {
   const [sending, setSending] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
   const [tab, setTab] = useState<"params" | "headers" | "auth" | "body">("params");
-  const [resTab, setResTab] = useState<"body" | "raw" | "headers">("body");
+  const [resTab, setResTab] = useState<"body" | "raw" | "headers" | "pick">("body");
   const [logOpen, setLogOpen] = useState(false);
   const [envOpen, setEnvOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -538,7 +541,7 @@ export default function ConsolePage() {
               </div>
 
               {/* ответ */}
-              <ResponseView response={response} tab={resTab} setTab={setResTab} />
+              <ResponseView response={response} tab={resTab} setTab={setResTab} onSaveVar={setVar} envName={activeEnv?.name} />
             </>
           )}
         </main>
@@ -671,10 +674,14 @@ function ResponseView({
   response,
   tab,
   setTab,
+  onSaveVar,
+  envName,
 }: {
   response: ResponseData | null;
-  tab: "body" | "raw" | "headers";
-  setTab: (t: "body" | "raw" | "headers") => void;
+  tab: "body" | "raw" | "headers" | "pick";
+  setTab: (t: "body" | "raw" | "headers" | "pick") => void;
+  onSaveVar: (name: string, value: string) => void;
+  envName?: string;
 }) {
   if (!response) {
     return (
@@ -699,13 +706,19 @@ function ResponseView({
         <span className="text-muted">{response.ms} ms</span>
         <span className="text-muted">{(response.sizeBytes / 1024).toFixed(1)} KB</span>
         <div className="ml-auto flex gap-1">
-          {(["body", "raw", "headers"] as const).map((t) => (
+          {(["body", "pick", "raw", "headers"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={cn("rounded px-2 py-0.5 transition", tab === t ? "bg-brand/10 font-semibold text-fg" : "text-muted hover:text-fg")}
             >
-              {t === "body" ? "Тело" : t === "raw" ? "Сырое" : `Заголовки (${Object.keys(response.headers).length})`}
+              {t === "body"
+                ? "Тело"
+                : t === "pick"
+                  ? "Взять значение"
+                  : t === "raw"
+                    ? "Сырое"
+                    : `Заголовки (${Object.keys(response.headers).length})`}
             </button>
           ))}
         </div>
@@ -724,9 +737,102 @@ function ResponseView({
           </div>
         ) : tab === "raw" ? (
           <pre className="whitespace-pre-wrap break-all font-mono text-xs text-fg">{response.body}</pre>
+        ) : tab === "pick" ? (
+          <ResponseVarPicker body={response.body} onSave={onSaveVar} envName={envName} />
         ) : (
           <pre className="json-view whitespace-pre-wrap break-all text-xs" dangerouslySetInnerHTML={{ __html: highlightJson(response.body) }} />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── взять значение из ответа → переменную ────────────────────────────────────────
+function ResponseVarPicker({
+  body,
+  onSave,
+  envName,
+}: {
+  body: string;
+  onSave: (name: string, value: string) => void;
+  envName?: string;
+}) {
+  const leaves = useMemo(() => flattenJson(body), [body]);
+  const [pick, setPick] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+
+  const valueOf = (path: string) => {
+    try {
+      return toStringVal(getByPath(JSON.parse(body), path));
+    } catch {
+      return "";
+    }
+  };
+  const save = (path: string) => {
+    const n = name.trim();
+    if (!n) return;
+    onSave(n, valueOf(path));
+    setPick(null);
+    setSaved(n);
+  };
+
+  if (leaves.length === 0) {
+    return <p className="text-xs text-muted">В ответе нет полей для выбора (это не JSON).</p>;
+  }
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-muted">
+        Нажми на значение — оно сохранится в переменную{envName ? ` окружения «${envName}»` : ""} и станет доступно как{" "}
+        <span className="font-mono">{"{{имя}}"}</span> в других запросах.
+      </p>
+      {saved && (
+        <div className="rounded-lg bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-600">
+          Сохранено: <span className="font-mono font-semibold">{`{{${saved}}}`}</span>
+        </div>
+      )}
+      <div className="space-y-0.5">
+        {leaves.map((leaf) => (
+          <div key={leaf.path}>
+            <button
+              onClick={() => {
+                setPick(leaf.path);
+                setName((leaf.label || "value").replace(/\[\d+\]/g, "").replace(/[^\w]/g, "") || "value");
+                setSaved(null);
+              }}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition hover:bg-brand/10",
+                pick === leaf.path && "bg-brand/10",
+              )}
+            >
+              <span className="shrink-0 font-mono font-semibold text-brand">{leaf.path}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-muted">{leaf.preview}</span>
+              <Plus className="h-3.5 w-3.5 shrink-0 text-faint" />
+            </button>
+            {pick === leaf.path && (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface-2/40 p-2">
+                <span className="text-[11px] text-muted">сохранить в</span>
+                <input
+                  autoFocus
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") save(leaf.path);
+                    if (e.key === "Escape") setPick(null);
+                  }}
+                  placeholder="имя переменной"
+                  className="input min-w-[140px] flex-1 py-1 font-mono text-xs"
+                />
+                <button onClick={() => save(leaf.path)} className="btn-primary py-1 text-xs">
+                  Сохранить
+                </button>
+                <button onClick={() => setPick(null)} className="btn-ghost py-1 text-xs">
+                  Отмена
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
