@@ -18,6 +18,7 @@ import {
   FileBarChart,
   Users,
   Waypoints,
+  TerminalSquare,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace";
@@ -40,6 +41,7 @@ const GROUP_ICONS: Record<string, typeof ShieldCheck> = {
   FileBarChart,
   Users,
   Waypoints,
+  TerminalSquare,
   ShieldCheck,
   Settings: SettingsIcon,
 };

@@ -51,6 +51,8 @@ export type PermissionKey =
   | "map.edit"
   | "map.delete"
   | "map.export"
+  // Bulut API (консоль)
+  | "console.view"
   // Администрирование
   | "admin.access";
 
@@ -123,6 +125,18 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: "map.edit", label: "Редактирование карт", hint: "Добавлять узлы и связи, менять свойства" },
       { key: "map.delete", label: "Удаление карт", hint: "Удалять карты целиком" },
       { key: "map.export", label: "Экспорт карт", hint: "Выгружать карту (PNG/JSON)" },
+    ],
+  },
+  {
+    title: "Bulut API",
+    icon: "TerminalSquare",
+    color: "#0d9488",
+    permissions: [
+      {
+        key: "console.view",
+        label: "Доступ к Bulut API",
+        hint: "Открывать раздел «Bulut API»: запросы, коллекции, потоки.",
+      },
     ],
   },
   {
