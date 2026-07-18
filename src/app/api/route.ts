@@ -35,6 +35,11 @@ export async function GET(_req: NextRequest) {
       "GET /api/maps": "Карты комнаты",
       "GET /api/maps/:id": "Карта + узлы [{id,label,kind}]",
       "POST /api/maps · PATCH /api/maps/:id · DELETE /api/maps/:id": "CRUD карт",
+      "POST /api/maps/:id/nodes": "Добавить узел на карту",
+      "PATCH /api/maps/:id/nodes/:nodeId · DELETE": "Изменить/удалить узел",
+      "POST /api/maps/:id/edges": "Добавить связь (стрелку)",
+      "DELETE /api/maps/:id/edges/:edgeId": "Удалить связь",
     },
+    docs_map: `${BASE}/BULUT_MAP_API.md`,
   });
 }

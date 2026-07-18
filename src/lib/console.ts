@@ -1043,10 +1043,25 @@ export function seedBulutCollection(): Collection {
       },
       {
         id: uid(),
-        name: "Карты",
+        name: "Карты (Bulut MAP)",
         requests: [
           req("Список карт", "GET", "/api/maps"),
-          req("Карта по id", "GET", "/api/maps/{{map_id}}"),
+          req("Карта по id + узлы", "GET", "/api/maps/{{map_id}}"),
+          req("Создать карту", "POST", "/api/maps", { bodyMode: "json", body: `{\n  "name": "Новая карта"\n}` }),
+          req("Добавить узел", "POST", "/api/maps/{{map_id}}/nodes", {
+            bodyMode: "json",
+            body: `{\n  "kind": "screen",\n  "label": "Login",\n  "x": 0,\n  "y": 120\n}`,
+          }),
+          req("Изменить узел (статус)", "PATCH", "/api/maps/{{map_id}}/nodes/{{node_id}}", {
+            bodyMode: "json",
+            body: `{\n  "statusOverride": "bug",\n  "description": "Не приходит OTP"\n}`,
+          }),
+          req("Удалить узел", "DELETE", "/api/maps/{{map_id}}/nodes/{{node_id}}"),
+          req("Добавить связь", "POST", "/api/maps/{{map_id}}/edges", {
+            bodyMode: "json",
+            body: `{\n  "source": "{{node_a}}",\n  "target": "{{node_b}}",\n  "label": "да"\n}`,
+          }),
+          req("Удалить связь", "DELETE", "/api/maps/{{map_id}}/edges/{{edge_id}}"),
         ],
       },
     ],
