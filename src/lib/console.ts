@@ -46,6 +46,7 @@ export interface ApiRequest {
   body: string; // json / raw text
   form: KV[]; // form-data + urlencoded
   tests?: Assertion[];
+  description?: string; // документация эндпойнта (Swagger-стиль)
 }
 
 export interface Folder {
@@ -862,16 +863,22 @@ interface PmRequest {
     urlencoded?: { key: string; value: string; disabled?: boolean }[];
   };
   auth?: { type?: string; bearer?: { key: string; value: string }[] };
+  description?: string | { content?: string };
 }
 interface PmItem {
   name?: string;
   item?: PmItem[];
   request?: PmRequest;
+  description?: string | { content?: string };
 }
 
 function pmUrlRaw(u: PmUrl | string | undefined): string {
   if (!u) return "";
   return typeof u === "string" ? u : u.raw ?? "";
+}
+function pmDesc(d: string | { content?: string } | undefined): string {
+  if (!d) return "";
+  return typeof d === "string" ? d : d.content ?? "";
 }
 
 function parsePmRequest(item: PmItem): ApiRequest {
@@ -912,6 +919,7 @@ function parsePmRequest(item: PmItem): ApiRequest {
     body: r.body?.raw ?? "",
     form: form.map((f) => kv(f.key, f.value, !f.disabled)),
     tests: [],
+    description: pmDesc(item.description) || pmDesc(r.description),
   };
 }
 

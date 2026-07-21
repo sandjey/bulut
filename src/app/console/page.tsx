@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   Search,
   Cookie,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
@@ -33,6 +34,7 @@ import * as db from "@/lib/db";
 import { cn } from "@/lib/utils";
 import { METHOD_COLOR, KVEditor, AuthEditor, BodyEditor } from "@/components/console/shared";
 import { FlowBuilder } from "@/components/console/FlowBuilder";
+import { DocsView } from "@/components/console/DocsView";
 import {
   loadState,
   saveState,
@@ -93,7 +95,7 @@ export default function ConsolePage() {
   const userId = user?.id ?? "";
 
   const [state, setState] = useState<ConsoleState>(defaultState);
-  const [mode, setMode] = useState<"requests" | "flows">("requests");
+  const [mode, setMode] = useState<"requests" | "docs" | "flows">("requests");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [token, setToken] = useState("");
   const [response, setResponse] = useState<ResponseData | null>(null);
@@ -454,6 +456,15 @@ export default function ConsolePage() {
             <Send className="h-4 w-4" /> Запросы
           </button>
           <button
+            onClick={() => setMode("docs")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 transition",
+              mode === "docs" ? "bg-brand/10 font-semibold text-brand" : "text-muted hover:text-fg",
+            )}
+          >
+            <BookOpen className="h-4 w-4" /> Документация
+          </button>
+          <button
             onClick={() => setMode("flows")}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 transition",
@@ -567,8 +578,19 @@ export default function ConsolePage() {
         />
       )}
 
+      {/* ── Документация (Swagger-стиль) ── */}
+      {mode === "docs" && (
+        <DocsView
+          collections={state.collections}
+          onOpen={(id) => {
+            setSelectedId(id);
+            setMode("requests");
+          }}
+        />
+      )}
+
       {/* ── Основная область (запросы) ── */}
-      <div className={cn("flex min-h-0 flex-1", mode === "flows" && "hidden")}>
+      <div className={cn("flex min-h-0 flex-1", mode !== "requests" && "hidden")}>
         {/* левая колонка — коллекции */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-border">
           <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
@@ -634,6 +656,12 @@ export default function ConsolePage() {
                   onChange={(e) => updateReq(current.id, { name: e.target.value })}
                   className="bg-transparent text-sm font-semibold outline-none"
                   placeholder="Название запроса"
+                />
+                <input
+                  value={current.description ?? ""}
+                  onChange={(e) => updateReq(current.id, { description: e.target.value })}
+                  className="bg-transparent text-xs text-muted outline-none"
+                  placeholder="Описание (для документации) — необязательно"
                 />
                 <div className="flex items-center gap-2">
                   <select
