@@ -325,9 +325,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (cacheKey && ready) saveCache(cacheKey, data);
   }, [data, cacheKey, ready]);
 
-  // Real-time: subscribe to all table changes so every user sees updates instantly
+  // Real-time: subscribe only to OUR workspace's rows — иначе любое изменение
+  // в ЧУЖОЙ комнате гоняет полный refetch (4 запроса) у всех подключённых клиентов
+  // разом. Fix: filter по workspace_id — Disk IO budget (см. письмо Supabase).
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !activeId) return;
     const sb = getSupabase();
     if (!sb) return;
 
@@ -347,19 +349,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       timer = setTimeout(run, 300);
     };
 
+    const wsFilter = { filter: `workspace_id=eq.${activeId}` };
     const channel = sb
-      .channel("bulut-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "boards" }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "journal" }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "task_comments" }, scheduleRefetch)
+      .channel(`bulut-realtime:${activeId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "boards", ...wsFilter }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", ...wsFilter }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "journal", ...wsFilter }, scheduleRefetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_comments", ...wsFilter }, scheduleRefetch)
       .subscribe();
 
     return () => {
       if (timer) clearTimeout(timer);
       sb.removeChannel(channel);
     };
-  }, [userId, apply, refreshTrash]);
+  }, [userId, activeId, apply, refreshTrash]);
 
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(

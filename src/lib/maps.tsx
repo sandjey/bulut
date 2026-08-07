@@ -97,30 +97,36 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId, activeId, apply, applyTrash, refreshTrashedMaps]);
 
-  // Realtime: обновляем список, но не затираем карту с несохранёнными правками
+  // Realtime: обновляем список, но не затираем карту с несохранёнными правками.
+  // Filter по workspace_id — иначе автосейв карты в ЧУЖОЙ комнате гонял бы
+  // refetch у всех подряд (Disk IO budget, см. письмо Supabase).
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !activeId) return;
     const sb = getSupabase();
     if (!sb) return;
     const channel = sb
-      .channel("bulut-maps")
-      .on("postgres_changes", { event: "*", schema: "public", table: "project_maps" }, () => {
-        db.fetchProjectMaps()
-          .then((incoming) => {
-            const prev = mapsRef.current;
-            const merged = incoming.map((inc) =>
-              dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
-            );
-            apply(merged);
-            refreshTrashedMaps();
-          })
-          .catch(console.error);
-      })
+      .channel(`bulut-maps:${activeId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "project_maps", filter: `workspace_id=eq.${activeId}` },
+        () => {
+          db.fetchProjectMaps()
+            .then((incoming) => {
+              const prev = mapsRef.current;
+              const merged = incoming.map((inc) =>
+                dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
+              );
+              apply(merged);
+              refreshTrashedMaps();
+            })
+            .catch(console.error);
+        },
+      )
       .subscribe();
     return () => {
       sb.removeChannel(channel);
     };
-  }, [userId, apply, refreshTrashedMaps]);
+  }, [userId, activeId, apply, refreshTrashedMaps]);
 
   const persist = useCallback((p: Promise<unknown>) => {
     p.catch((e) => console.error("Ошибка синхронизации карты", e));
@@ -216,7 +222,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
             dirty.current.delete(id);
           }),
         );
-      }, 700);
+      }, 2500);
       timers.current.set(id, t);
     },
     [apply, persist],

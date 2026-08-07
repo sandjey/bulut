@@ -132,14 +132,25 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     const sb = getSupabase();
     if (!sb) return;
+    // Filter по user_id — иначе любое добавление/удаление участника или
+    // уведомление у ЛЮБОГО пользователя гоняло бы refetch у всех подряд
+    // (Disk IO budget, см. письмо Supabase).
     const ch = sb
-      .channel("bulut-ws")
-      .on("postgres_changes", { event: "*", schema: "public", table: "workspace_members" }, () => {
-        loadWorkspaces().catch(console.error);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => {
-        refreshInbox();
-      })
+      .channel(`bulut-ws:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "workspace_members", filter: `user_id=eq.${userId}` },
+        () => {
+          loadWorkspaces().catch(console.error);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+        () => {
+          refreshInbox();
+        },
+      )
       .subscribe();
     return () => {
       sb.removeChannel(ch);
