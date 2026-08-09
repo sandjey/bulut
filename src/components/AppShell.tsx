@@ -9,7 +9,7 @@ import { NotificationsBell } from "./NotificationsBell";
 import { useStore } from "@/lib/store";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { ready } = useStore();
+  const { ready, syncing } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -78,6 +78,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="font-bold brand-text font-display">Bulut</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {syncing && (
+              <span className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-muted">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
+                Синхронизация…
+              </span>
+            )}
             <NotificationsBell />
           </div>
         </header>

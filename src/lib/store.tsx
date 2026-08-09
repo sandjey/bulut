@@ -181,6 +181,8 @@ export interface NewTaskInput {
 
 interface StoreContextValue extends AppData {
   ready: boolean;
+  /** true — на экране кэш с прошлого раза, идёт первая проверка с сервером. */
+  syncing: boolean;
   // boards
   createBoard: (name: string, color?: string) => Board;
   updateBoard: (id: string, patch: Partial<Omit<Board, "id">>) => void;
@@ -245,6 +247,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const [data, setData] = useState<AppData>(EMPTY);
   const [ready, setReady] = useState(false);
+  // true — на экране кэш с прошлого раза, идёт первая сверка с сервером.
+  // Без этого флага смена «старое → новое» число карточек выглядит как баг.
+  const [syncing, setSyncing] = useState(false);
   const dataRef = useRef<AppData>(EMPTY);
   // Сколько наших записей «в полёте» — пока > 0, не перезагружаем данные с сервера,
   // чтобы чужое realtime-событие не затёрло наши оптимистичные изменения.
@@ -289,6 +294,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       applyTrash(EMPTY_TRASH);
       setBackups([]);
       setReady(false);
+      setSyncing(false);
       return;
     }
 
@@ -296,9 +302,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (cached) {
       apply(cached);
       setReady(true); // show cached data immediately
+      setSyncing(true); // но это может быть устаревший снимок — сверяем с сервером
     } else {
       apply(EMPTY); // другая комната — не показываем чужие данные из прошлого стейта
       setReady(false);
+      setSyncing(false);
     }
 
     db.fetchAll(userId)
@@ -306,13 +314,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) {
           apply(fresh);
           setReady(true);
+          setSyncing(false);
           refreshTrash();
         }
       })
       .catch((e) => {
         // offline / server unreachable — keep whatever the cache gave us
         console.error("Не удалось загрузить данные (работаем из кэша)", e);
-        if (!cancelled) setReady(true);
+        if (!cancelled) {
+          setReady(true);
+          setSyncing(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -1291,6 +1303,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...data,
       ready,
+      syncing,
       createBoard,
       updateBoard,
       deleteBoard,
