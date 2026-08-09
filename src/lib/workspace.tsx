@@ -10,7 +10,6 @@ import React, {
   useState,
 } from "react";
 import { useAuth } from "./auth";
-import { getSupabase } from "./supabase";
 import * as db from "./db";
 import type { Workspace, WorkspaceMember, Invitation, AppNotification } from "./workspace-types";
 import type { AppRole, PermissionKey } from "./permissions";
@@ -127,33 +126,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId, loadWorkspaces]);
 
-  // Реалтайм: меня добавили/убрали из комнаты — обновляем список.
+  // Раньше здесь была realtime-подписка — заменена на опрос (websocket держит
+  // активной дорогую realtime.list_changes() на тарифе Nano, см. store.tsx).
+  // Реже, чем доска: приглашение/добавление в комнату не так срочно.
   useEffect(() => {
     if (!userId) return;
-    const sb = getSupabase();
-    if (!sb) return;
-    // Filter по user_id — иначе любое добавление/удаление участника или
-    // уведомление у ЛЮБОГО пользователя гоняло бы refetch у всех подряд
-    // (Disk IO budget, см. письмо Supabase).
-    const ch = sb
-      .channel(`bulut-ws:${userId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "workspace_members", filter: `user_id=eq.${userId}` },
-        () => {
-          loadWorkspaces().catch(console.error);
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
-        () => {
-          refreshInbox();
-        },
-      )
-      .subscribe();
+
+    const poll = () => {
+      loadWorkspaces().catch(console.error);
+      refreshInbox();
+    };
+
+    const interval = setInterval(poll, 45000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
+
     return () => {
-      sb.removeChannel(ch);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, loadWorkspaces]);

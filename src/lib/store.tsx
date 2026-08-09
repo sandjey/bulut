@@ -30,7 +30,6 @@ import {
 } from "./types";
 import * as db from "./db";
 import { loadCache, saveCache } from "./cache";
-import { getSupabase } from "./supabase";
 import { useAuth } from "./auth";
 import { useWorkspace } from "./workspace";
 import { getMe } from "./me";
@@ -325,44 +324,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (cacheKey && ready) saveCache(cacheKey, data);
   }, [data, cacheKey, ready]);
 
-  // Real-time: subscribe only to OUR workspace's rows — иначе любое изменение
-  // в ЧУЖОЙ комнате гоняет полный refetch (4 запроса) у всех подключённых клиентов
-  // разом. Fix: filter по workspace_id — Disk IO budget (см. письмо Supabase).
+  // Раньше здесь была realtime-подписка (websocket). Она держит активной
+  // тяжёлую функцию realtime.list_changes() на стороне Postgres (10+ секунд
+  // на вызов на тарифе Nano — см. Logs → Postgres) — платно чинится апгрейдом
+  // компьюта. Бесплатная альтернатива: обычный опрос раз в 25с + сразу при
+  // возврате на вкладку. Без нагрузки на WAL, чуть медленнее видно чужие правки.
   useEffect(() => {
     if (!userId || !activeId) return;
-    const sb = getSupabase();
-    if (!sb) return;
 
-    // Debounce refetch to avoid flooding when many rows change at once.
-    // Если у нас есть незавершённые записи — ждём, чтобы не затереть их чужим событием.
-    // Корзину здесь НЕ трогаем — /trash сам вызывает refreshTrash() при открытии
-    // (см. src/app/trash/page.tsx). Раньше это удваивало нагрузку: 7 запросов
-    // на каждое событие вместо 4, хотя Корзина открыта почти никогда.
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefetch = () => {
-      if (timer) clearTimeout(timer);
-      const run = () => {
-        if (pending.current > 0) {
-          timer = setTimeout(run, 250);
-          return;
-        }
-        db.fetchAll(userId).then(apply).catch(console.error);
-      };
-      timer = setTimeout(run, 300);
+    const poll = () => {
+      if (pending.current > 0) return; // не затираем свои неподтверждённые записи
+      db.fetchAll(userId).then(apply).catch(console.error);
     };
 
-    const wsFilter = { filter: `workspace_id=eq.${activeId}` };
-    const channel = sb
-      .channel(`bulut-realtime:${activeId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "boards", ...wsFilter }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks", ...wsFilter }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "journal", ...wsFilter }, scheduleRefetch)
-      .on("postgres_changes", { event: "*", schema: "public", table: "task_comments", ...wsFilter }, scheduleRefetch)
-      .subscribe();
+    const interval = setInterval(poll, 25000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
 
     return () => {
-      if (timer) clearTimeout(timer);
-      sb.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
     };
   }, [userId, activeId, apply]);
 

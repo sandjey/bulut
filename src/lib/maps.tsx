@@ -11,7 +11,6 @@ import React, {
 } from "react";
 import { useAuth } from "./auth";
 import { useWorkspace } from "./workspace";
-import { getSupabase } from "./supabase";
 import * as db from "./db";
 import { ProjectMap, MapGraph, EMPTY_GRAPH } from "./map-types";
 import { BOARD_COLORS } from "./types";
@@ -97,34 +96,36 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId, activeId, apply, applyTrash, refreshTrashedMaps]);
 
-  // Realtime: обновляем список, но не затираем карту с несохранёнными правками.
-  // Filter по workspace_id — иначе автосейв карты в ЧУЖОЙ комнате гонял бы
-  // refetch у всех подряд (Disk IO budget, см. письмо Supabase).
+  // Раньше здесь была realtime-подписка — заменена на опрос (см. store.tsx
+  // для причины: websocket держит активной дорогую realtime.list_changes()
+  // на тарифе Nano). Не затираем карту с несохранёнными правками.
   useEffect(() => {
     if (!userId || !activeId) return;
-    const sb = getSupabase();
-    if (!sb) return;
-    const channel = sb
-      .channel(`bulut-maps:${activeId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "project_maps", filter: `workspace_id=eq.${activeId}` },
-        () => {
-          db.fetchProjectMaps()
-            .then((incoming) => {
-              const prev = mapsRef.current;
-              const merged = incoming.map((inc) =>
-                dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
-              );
-              apply(merged);
-              refreshTrashedMaps();
-            })
-            .catch(console.error);
-        },
-      )
-      .subscribe();
+
+    const poll = () => {
+      db.fetchProjectMaps()
+        .then((incoming) => {
+          const prev = mapsRef.current;
+          const merged = incoming.map((inc) =>
+            dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
+          );
+          apply(merged);
+          refreshTrashedMaps();
+        })
+        .catch(console.error);
+    };
+
+    const interval = setInterval(poll, 25000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
+
     return () => {
-      sb.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
     };
   }, [userId, activeId, apply, refreshTrashedMaps]);
 

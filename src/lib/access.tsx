@@ -113,19 +113,27 @@ export function AccessProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userId]);
 
-  // Реалтайм: изменения прав применяются мгновенно у всех.
+  // Раньше здесь была realtime-подписка — заменена на опрос (websocket держит
+  // активной дорогую realtime.list_changes() на тарифе Nano, см. store.tsx).
+  // Права/профили меняются редко — опрос раз в 45с достаточен.
   useEffect(() => {
     if (!userId) return;
-    const sb = getSupabase();
-    if (!sb) return;
-    const channel = sb
-      .channel("bulut-profiles")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
-        db.fetchProfiles().then(setProfiles).catch(console.error);
-      })
-      .subscribe();
+
+    const poll = () => {
+      db.fetchProfiles().then(setProfiles).catch(console.error);
+    };
+
+    const interval = setInterval(poll, 45000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", poll);
+
     return () => {
-      sb.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", poll);
     };
   }, [userId]);
 
