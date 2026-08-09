@@ -335,6 +335,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     // Debounce refetch to avoid flooding when many rows change at once.
     // Если у нас есть незавершённые записи — ждём, чтобы не затереть их чужим событием.
+    // Корзину здесь НЕ трогаем — /trash сам вызывает refreshTrash() при открытии
+    // (см. src/app/trash/page.tsx). Раньше это удваивало нагрузку: 7 запросов
+    // на каждое событие вместо 4, хотя Корзина открыта почти никогда.
     let timer: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefetch = () => {
       if (timer) clearTimeout(timer);
@@ -344,7 +347,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         db.fetchAll(userId).then(apply).catch(console.error);
-        refreshTrash();
       };
       timer = setTimeout(run, 300);
     };
@@ -362,7 +364,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (timer) clearTimeout(timer);
       sb.removeChannel(channel);
     };
-  }, [userId, activeId, apply, refreshTrash]);
+  }, [userId, activeId, apply]);
 
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(
