@@ -15,6 +15,7 @@ import {
   Column,
   JournalEntry,
   Task,
+  TaskPhoto,
   TaskComment,
   CommentKind,
   Member,
@@ -231,6 +232,8 @@ interface StoreContextValue extends AppData {
   restoreBackup: (id: string) => Promise<void>;
   // data
   refetch: () => Promise<void>;
+  /** Подгрузить фото задачи (открыли карточку) — они не приходят с общей загрузкой. */
+  loadTaskPhotos: (taskId: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -264,10 +267,52 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const [backups, setBackups] = useState<BackupMeta[]>([]);
 
+  // Метка синхронизации комнаты (db.fetchSyncStamp): пока она не изменилась,
+  // опрос вообще не качает данные — только ~200 байт на проверку.
+  // null — сервер метку не отдаёт (миграция 20240131 не применена): тогда
+  // работаем по-старому, полной загрузкой.
+  const syncStamp = useRef<string | null>(null);
+
   const apply = useCallback((next: AppData) => {
     dataRef.current = next;
     setData(next);
   }, []);
+
+  /**
+   * С сервера задачи приходят без фото (base64 качаем лениво, по карточке),
+   * поэтому переносим уже загруженные фото из текущего состояния — иначе
+   * открытая карточка теряла бы картинки на каждом опросе.
+   */
+  const mergePhotos = useCallback((fresh: AppData): AppData => {
+    const loaded = new Map<string, TaskPhoto[]>();
+    for (const t of dataRef.current.tasks) if (t.photos) loaded.set(t.id, t.photos);
+    if (!loaded.size) return fresh;
+    return {
+      ...fresh,
+      tasks: fresh.tasks.map((t) => {
+        if (t.photos !== undefined) return t;
+        const mine = loaded.get(t.id);
+        if (!mine) return t;
+        // Счётчик с сервера разошёлся с тем, что у нас на руках — значит фото
+        // поменял кто-то другой. Оставляем поле пустым: карточка перекачает их.
+        if (t.photoCount !== undefined && t.photoCount !== mine.length) return t;
+        return { ...t, photos: mine };
+      }),
+    };
+  }, []);
+
+  /** Полная загрузка с сервера + запоминание метки синхронизации. */
+  const loadFresh = useCallback(
+    async (uid: string): Promise<AppData> => {
+      // Метку берём параллельно с данными: если что-то изменится между двумя
+      // запросами, метка окажется «старее» данных — тогда следующий опрос
+      // просто перезагрузит лишний раз. Пропустить изменение так нельзя.
+      const [stamp, fresh] = await Promise.all([db.fetchSyncStamp(), db.fetchAll(uid)]);
+      syncStamp.current = stamp;
+      return mergePhotos(fresh);
+    },
+    [mergePhotos]
+  );
 
   const refreshTrash = useCallback(() => {
     db.fetchTrash().then(applyTrash).catch(() => {});
@@ -276,13 +321,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refetch = useCallback(async () => {
     if (!userId) return;
     try {
-      const fresh = await db.fetchAll(userId);
-      apply(fresh);
+      apply(await loadFresh(userId));
       refreshTrash();
     } catch (e) {
       console.error("Не удалось загрузить данные", e);
     }
-  }, [userId, apply, refreshTrash]);
+  }, [userId, apply, loadFresh, refreshTrash]);
+
+  /**
+   * Подгрузить фото одной задачи (открыли карточку). Единственное место, где
+   * base64 идёт по сети. Повторно не качаем — если фото уже в состоянии, выходим.
+   */
+  const loadTaskPhotos = useCallback(
+    async (taskId: string) => {
+      if (dataRef.current.tasks.find((t) => t.id === taskId)?.photos !== undefined) return;
+      try {
+        const photos = await db.fetchTaskPhotos(taskId);
+        apply({
+          ...dataRef.current,
+          tasks: dataRef.current.tasks.map((t) =>
+            t.id === taskId ? { ...t, photos, photoCount: photos.length } : t
+          ),
+        });
+      } catch (e) {
+        console.error("Не удалось загрузить фото задачи", e);
+      }
+    },
+    [apply]
+  );
 
   // (Re)load whenever the signed-in user changes.
   // Cache-first: hydrate instantly from localStorage (offline-safe, no empty
@@ -298,6 +364,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    syncStamp.current = null; // другая комната/пользователь — метка прошлой не годится
+
     const cached = cacheKey ? loadCache(cacheKey) : null;
     if (cached) {
       apply(cached);
@@ -309,7 +377,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setSyncing(false);
     }
 
-    db.fetchAll(userId)
+    loadFresh(userId)
       .then((fresh) => {
         if (!cancelled) {
           apply(fresh);
@@ -329,7 +397,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, activeId, cacheKey, apply, applyTrash, refreshTrash, EMPTY_TRASH]);
+  }, [userId, activeId, cacheKey, apply, applyTrash, loadFresh, refreshTrash, EMPTY_TRASH]);
 
   // Write-through: persist every state change to the offline cache (по комнате)
   useEffect(() => {
@@ -341,12 +409,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // на вызов на тарифе Nano — см. Logs → Postgres) — платно чинится апгрейдом
   // компьюта. Бесплатная альтернатива: обычный опрос раз в 25с + сразу при
   // возврате на вкладку. Без нагрузки на WAL, чуть медленнее видно чужие правки.
+  //
+  // Опрос устроен в два шага, иначе он съедает трафик: сначала спрашиваем
+  // короткую метку синхронизации (~200 байт), и только если она изменилась —
+  // качаем данные. Свёрнутую вкладку не опрашиваем вообще.
   useEffect(() => {
     if (!userId || !activeId) return;
 
-    const poll = () => {
+    let busy = false;
+
+    const poll = async () => {
+      if (busy) return; // предыдущий опрос ещё идёт (медленная сеть)
       if (pending.current > 0) return; // не затираем свои неподтверждённые записи
-      db.fetchAll(userId).then(apply).catch(console.error);
+      if (typeof document !== "undefined" && document.hidden) return; // вкладка не на экране
+      busy = true;
+      try {
+        const stamp = await db.fetchSyncStamp();
+        // Метка есть и не менялась — в комнате ничего не произошло, данные не тянем.
+        if (stamp && stamp === syncStamp.current) return;
+        if (pending.current > 0) return; // пока проверяли метку, начали писать свои правки
+        apply(await loadFresh(userId));
+      } catch (e) {
+        console.error(e);
+      } finally {
+        busy = false;
+      }
     };
 
     const interval = setInterval(poll, 25000);
@@ -354,14 +441,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === "visible") poll();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", poll);
+    window.addEventListener("focus", onVisible);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", poll);
+      window.removeEventListener("focus", onVisible);
     };
-  }, [userId, activeId, apply]);
+  }, [userId, activeId, apply, loadFresh]);
 
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(
@@ -1343,6 +1430,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       downloadBackup,
       restoreBackup,
       refetch,
+      loadTaskPhotos,
     }),
     [
       data,
@@ -1386,6 +1474,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       downloadBackup,
       restoreBackup,
       refetch,
+      loadTaskPhotos,
     ]
   );
 

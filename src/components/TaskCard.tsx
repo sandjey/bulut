@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { durationSince } from "@/lib/date";
 import { DraggableProvidedDragHandleProps } from "@hello-pangea/dnd";
-import { Board, Task } from "@/lib/types";
+import { Board, Task, taskPhotoCount } from "@/lib/types";
 import { useStore, doneColumnId, columnRole } from "@/lib/store";
 import { useCan } from "@/lib/access";
 import { PriorityDot } from "./PriorityDot";
@@ -55,7 +55,7 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging, edi
   const checklist = task.checklist ?? [];
   const checkDone = checklist.filter((i) => i.done).length;
   const attachCount = (task.attachments ?? []).length;
-  const photoCount = (task.photos ?? []).length;
+  const photoCount = taskPhotoCount(task);
   const subs = useMemo(() => tasks.filter((t) => t.parentId === task.id && !t.deletedAt), [tasks, task.id]);
   const subDone = subs.filter((s) => s.status === "done").length;
   const blocked =

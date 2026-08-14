@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, Trash2, Loader2, X, ImageIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { TaskPhoto, MAX_TASK_PHOTOS } from "@/lib/types";
+import { TaskPhoto, MAX_TASK_PHOTOS, taskPhotoCount } from "@/lib/types";
 import { compressImage } from "@/lib/image";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ function uid() {
 }
 
 export function PhotoUploader({ taskId }: { taskId: string }) {
-  const { tasks, updateTask } = useStore();
+  const { tasks, updateTask, loadTaskPhotos } = useStore();
   const task = tasks.find((t) => t.id === taskId);
 
   const [busy, setBusy] = useState(false);
@@ -20,12 +20,22 @@ export function PhotoUploader({ taskId }: { taskId: string }) {
   const [preview, setPreview] = useState<TaskPhoto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const loading = !!task && task.photos === undefined;
+
+  // Фото не приходят с общей загрузкой доски (тяжёлый base64 — раньше он качался
+  // при каждом опросе). Тянем их здесь, когда раздел «Фото» реально открыли —
+  // и ещё раз, если их изменил кто-то другой (тогда store их сбрасывает).
+  useEffect(() => {
+    if (loading) loadTaskPhotos(taskId);
+  }, [loading, taskId, loadTaskPhotos]);
   const photos = task?.photos ?? [];
   const remaining = MAX_TASK_PHOTOS - photos.length;
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
-      if (!task) return;
+      // Пока старые фото не загрузились, добавлять нельзя: список ушёл бы
+      // в базу без них, то есть затёр бы уже загруженные фото.
+      if (!task || task.photos === undefined) return;
       const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
       if (!images.length) return;
       const slots = MAX_TASK_PHOTOS - (task.photos?.length ?? 0);
@@ -70,12 +80,12 @@ export function PhotoUploader({ taskId }: { taskId: string }) {
           <ImageIcon className="h-3.5 w-3.5" /> Фото
         </span>
         <span className="text-xs text-muted">
-          {photos.length}/{MAX_TASK_PHOTOS}
+          {loading ? taskPhotoCount(task) : photos.length}/{MAX_TASK_PHOTOS}
         </span>
-        {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}
+        {(busy || loading) && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}
       </div>
 
-      {photos.length > 0 && (
+      {!loading && photos.length > 0 && (
         <div className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {photos.map((p) => (
             <div
@@ -103,7 +113,7 @@ export function PhotoUploader({ taskId }: { taskId: string }) {
         </div>
       )}
 
-      {remaining > 0 && (
+      {!loading && remaining > 0 && (
         <div
           onDragOver={(e) => {
             e.preventDefault();

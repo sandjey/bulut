@@ -40,6 +40,7 @@ import {
   PRIORITY_META,
   TASK_TYPES,
   TASK_TYPE_KEYS,
+  taskPhotoCount,
 } from "@/lib/types";
 import { uniqueTags } from "@/lib/filters";
 import { withAlpha, cn } from "@/lib/utils";
@@ -763,8 +764,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
               key={`photos-${task.id}`}
               title="Фото"
               icon={ImageIcon}
-              hint={task.photos?.length ? `${task.photos.length}` : undefined}
-              defaultOpen={(task.photos?.length ?? 0) > 0}
+              hint={taskPhotoCount(task) ? `${taskPhotoCount(task)}` : undefined}
+              defaultOpen={taskPhotoCount(task) > 0}
             >
               <PhotoUploader taskId={task.id} />
             </Section>

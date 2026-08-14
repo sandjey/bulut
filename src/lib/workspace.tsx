@@ -133,6 +133,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
 
     const poll = () => {
+      if (typeof document !== "undefined" && document.hidden) return; // свёрнутую вкладку не опрашиваем
       loadWorkspaces().catch(console.error);
       refreshInbox();
     };
@@ -142,12 +143,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === "visible") poll();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", poll);
+    window.addEventListener("focus", onVisible);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", poll);
+      window.removeEventListener("focus", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, loadWorkspaces]);

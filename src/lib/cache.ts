@@ -33,19 +33,17 @@ export function loadCache(userId: string): AppData | null {
 export function saveCache(userId: string, data: AppData): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(keyFor(userId), JSON.stringify(data));
+    // Фото (base64) в кэш не кладём: они занимают почти всю квоту localStorage,
+    // а грузятся по требованию при открытии карточки. undefined = «не загружены»
+    // (JSON.stringify такие поля просто выбрасывает), поэтому после чтения кэша
+    // карточка честно сходит за фото на сервер, а не решит, что их нет.
+    const slim: AppData = {
+      ...data,
+      tasks: data.tasks.map(({ photos, ...t }) => t),
+    };
+    window.localStorage.setItem(keyFor(userId), JSON.stringify(slim));
   } catch (e) {
-    // Quota exceeded (usually large base64 photos) — drop photos and retry so
-    // the rest of the workspace still caches for offline use.
-    try {
-      const slim: AppData = {
-        ...data,
-        tasks: data.tasks.map((t) => ({ ...t, photos: [] })),
-      };
-      window.localStorage.setItem(keyFor(userId), JSON.stringify(slim));
-    } catch {
-      console.warn("Не удалось сохранить офлайн-кэш", e);
-    }
+    console.warn("Не удалось сохранить офлайн-кэш", e);
   }
 }
 

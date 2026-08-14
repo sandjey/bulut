@@ -75,7 +75,10 @@ export interface Task {
   stageTimes: Record<string, number>; // имя колонки → накопленные секунды
   checklist: ChecklistItem[]; // подзадачи / чек-лист
   attachments: Attachment[]; // ссылки/файлы
-  photos: TaskPhoto[]; // фото (base64) — удаляются при переходе в «Готово»
+  // Фото (base64). Грузятся лениво, при открытии карточки: undefined = «ещё не
+  // загружены», [] = «загружены, их нет». Удаляются при переходе в «Готово».
+  photos?: TaskPhoto[];
+  photoCount?: number; // сколько фото у задачи — для значка, без самих фото
   order: number; // ordering within a column
   mapId: string | null; // Bulut MAP: к какой карте привязана задача
   mapNodeId: string | null; // Bulut MAP: id узла-экрана в графе карты
@@ -128,6 +131,12 @@ export interface TaskPhoto {
 
 /** Max photos allowed per task. */
 export const MAX_TASK_PHOTOS = 10;
+
+/**
+ * Сколько фото у задачи. Если фото уже загружены — считаем их, иначе берём
+ * счётчик с сервера (он приходит вместо самих фото, чтобы не качать base64).
+ */
+export const taskPhotoCount = (t: Task): number => t.photos?.length ?? t.photoCount ?? 0;
 
 export type CommentKind = "comment" | "return";
 

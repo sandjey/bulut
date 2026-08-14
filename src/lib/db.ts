@@ -58,7 +58,10 @@ interface TaskRow {
   stage_times: Record<string, number>;
   checklist: import("./types").ChecklistItem[];
   attachments: import("./types").Attachment[];
-  photos: import("./types").TaskPhoto[];
+  // Фото не входят в обычную выборку (тяжёлый base64) — приходят только из
+  // fetchTaskPhotos. Здесь undefined = «не запрашивали», а не «фото нет».
+  photos?: import("./types").TaskPhoto[];
+  photo_count?: number | null;
   map_id: string | null;
   map_node_id: string | null;
   parent_id: string | null;
@@ -132,7 +135,9 @@ const toTask = (r: TaskRow): Task => ({
   stageTimes: r.stage_times ?? {},
   checklist: r.checklist ?? [],
   attachments: r.attachments ?? [],
-  photos: r.photos ?? [],
+  photos: r.photos,
+  // undefined — сервер счётчик не отдал (миграция 20240131 ещё не применена)
+  photoCount: r.photo_count ?? r.photos?.length,
   order: r.position,
   mapId: r.map_id ?? null,
   mapNodeId: r.map_node_id ?? null,
@@ -190,6 +195,76 @@ function wsId(): string {
 }
 
 // ---------- Bulk load ----------
+
+/**
+ * Колонки задачи, которые тянем при обычной загрузке — ВСЕ, кроме `photos`.
+ *
+ * `photos` хранит фото в base64 прямо в строке. Раньше здесь стояла `select("*")`,
+ * и опрос раз в 25 секунд качал все фото комнаты заново — это давало десятки
+ * гигабайт egress в день. Теперь фото приходят только по требованию
+ * (fetchTaskPhotos), когда пользователь открыл карточку.
+ */
+const TASK_COLUMNS_BASE =
+  "id,user_id,board_id,column_id,title,description,assignee,priority,type,due_date," +
+  "done_due_date,tags,status,position,created_at,created_by,ready_at,tested_at,completed_at," +
+  "stage_entered_at,return_count,returns,stage_times,checklist,attachments,map_id,map_node_id," +
+  "parent_id,blocked_by,story_points,epic,sprint,watchers,custom,deleted_at";
+
+// photo_count появляется только после миграции 20240131. Пока её нет — работаем
+// без счётчика (значок «фото» на карточке просто не показывается).
+let hasPhotoCount = true;
+const taskColumns = () => (hasPhotoCount ? `${TASK_COLUMNS_BASE},photo_count` : TASK_COLUMNS_BASE);
+
+const isMissingColumn = (e: { code?: string; message?: string } | null): boolean =>
+  !!e && (e.code === "42703" || e.code === "PGRST204" || /photo_count/i.test(e.message ?? ""));
+
+/** Задачи комнаты без колонки photos. Сам откатывается, если миграции ещё нет. */
+async function selectTasksSlim(ws: string, orderBy: "position" | "created_at") {
+  const ascending = orderBy === "position";
+  const run = (cols: string) =>
+    client().from("tasks").select(cols).eq("workspace_id", ws).order(orderBy, { ascending });
+
+  let res = await run(taskColumns());
+  if (res.error && hasPhotoCount && isMissingColumn(res.error)) {
+    hasPhotoCount = false; // миграция ещё не применена — пробуем без photo_count
+    res = await run(taskColumns());
+  }
+  return { data: res.data as unknown as TaskRow[] | null, error: res.error };
+}
+
+/**
+ * Фото одной задачи — грузим лениво, при открытии карточки.
+ * Единственное место, где base64 уходит по сети.
+ */
+export async function fetchTaskPhotos(taskId: string): Promise<import("./types").TaskPhoto[]> {
+  const { data, error } = await client().from("tasks").select("photos").eq("id", taskId).maybeSingle();
+  if (error) throw error;
+  return ((data?.photos as import("./types").TaskPhoto[] | null) ?? []);
+}
+
+/**
+ * Короткая «метка синхронизации» комнаты (~200 байт): меняется при любой
+ * вставке, правке или удалении. Опрос сначала спрашивает её и качает данные,
+ * только если метка изменилась.
+ *
+ * null = метки нет (миграция 20240131 не применена) → зовущий делает полную
+ * загрузку, как раньше.
+ */
+export async function fetchSyncStamp(): Promise<string | null> {
+  if (!activeWs) return null;
+  const { data, error } = await client().rpc("workspace_sync_stamp", { p_ws: activeWs });
+  if (error || typeof data !== "string") return null;
+  return data;
+}
+
+/** То же самое для карт (Bulut MAP) — графы тоже тяжёлые. */
+export async function fetchMapsSyncStamp(): Promise<string | null> {
+  if (!activeWs) return null;
+  const { data, error } = await client().rpc("maps_sync_stamp", { p_ws: activeWs });
+  if (error || typeof data !== "string") return null;
+  return data;
+}
+
 export async function fetchAll(userId: string): Promise<AppData> {
   const c = client();
   // Нет активной комнаты — нет данных (пусто, без падений).
@@ -197,7 +272,7 @@ export async function fetchAll(userId: string): Promise<AppData> {
   const ws = activeWs;
   const [boardsRes, tasksRes, journalRes, commentsRes] = await Promise.all([
     c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
-    c.from("tasks").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
+    selectTasksSlim(ws, "position"),
     c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
     c.from("task_comments").select("*").eq("workspace_id", ws).order("created_at", { ascending: true }),
   ]);
@@ -228,7 +303,7 @@ export async function fetchTrash(): Promise<import("./types").TrashData> {
   const ws = activeWs;
   const [boardsRes, tasksRes, journalRes] = await Promise.all([
     c.from("boards").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
-    c.from("tasks").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+    selectTasksSlim(ws, "created_at"),
     c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
   ]);
   // если колонки deleted_at ещё нет — вернём пустую корзину, а не упадём
@@ -325,7 +400,10 @@ export async function restoreBoardRow(id: string) {
 
 // ---------- Tasks ----------
 export async function insertTask(t: Task, userId: string) {
-  const { error } = await client().from("tasks").insert(taskToRow(t, userId));
+  // Новая задача — единственная запись, где фото передаются целиком.
+  const { error } = await client()
+    .from("tasks")
+    .insert({ ...taskToRow(t, userId), photos: t.photos ?? [] });
   if (error) throw error;
 }
 
@@ -425,7 +503,9 @@ function taskToRow(t: Task, userId: string) {
     stage_times: t.stageTimes ?? {},
     checklist: t.checklist ?? [],
     attachments: t.attachments ?? [],
-    photos: t.photos ?? [],
+    // photos СПЕЦИАЛЬНО отсутствуют: в памяти их обычно нет (грузятся лениво),
+    // и upsert затёр бы фото в базе пустым массивом. Фото пишутся только через
+    // insertTask (новая задача) и updateTaskRow({ photos }) (загрузка/удаление).
     map_id: t.mapId ?? null,
     map_node_id: t.mapNodeId ?? null,
     parent_id: t.parentId ?? null,

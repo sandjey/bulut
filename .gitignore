@@ -30,3 +30,6 @@ yarn-error.log*
 next-env.d.ts
 .vercel
 .env*
+
+# временный файл переезда на новый Supabase
+.migrate-secrets.local

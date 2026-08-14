@@ -69,6 +69,10 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     setMaps(next);
   }, []);
 
+  // Метка синхронизации карт (см. store.tsx): пока не изменилась — графы,
+  // которые весят немало, по сети не гоняем.
+  const syncStamp = useRef<string | null>(null);
+
   // Загрузка
   useEffect(() => {
     let cancelled = false;
@@ -79,9 +83,11 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     setReady(false);
-    db.fetchProjectMaps()
-      .then((list) => {
+    syncStamp.current = null; // другая комната — метка прошлой не годится
+    Promise.all([db.fetchMapsSyncStamp(), db.fetchProjectMaps()])
+      .then(([stamp, list]) => {
         if (!cancelled) {
+          syncStamp.current = stamp;
           apply(list);
           setReady(true);
           refreshTrashedMaps();
@@ -102,17 +108,29 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!userId || !activeId) return;
 
-    const poll = () => {
-      db.fetchProjectMaps()
-        .then((incoming) => {
-          const prev = mapsRef.current;
-          const merged = incoming.map((inc) =>
-            dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
-          );
-          apply(merged);
-          refreshTrashedMaps();
-        })
-        .catch(console.error);
+    let busy = false;
+
+    const poll = async () => {
+      if (busy) return;
+      if (typeof document !== "undefined" && document.hidden) return; // вкладка не на экране
+      busy = true;
+      try {
+        const stamp = await db.fetchMapsSyncStamp();
+        // Метка есть и не менялась — карты никто не трогал, графы не качаем.
+        if (stamp && stamp === syncStamp.current) return;
+        const incoming = await db.fetchProjectMaps();
+        syncStamp.current = stamp;
+        const prev = mapsRef.current;
+        const merged = incoming.map((inc) =>
+          dirty.current.has(inc.id) ? prev.find((p) => p.id === inc.id) ?? inc : inc,
+        );
+        apply(merged);
+        refreshTrashedMaps();
+      } catch (e) {
+        console.error(e);
+      } finally {
+        busy = false;
+      }
     };
 
     const interval = setInterval(poll, 25000);
@@ -120,12 +138,12 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
       if (document.visibilityState === "visible") poll();
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", poll);
+    window.addEventListener("focus", onVisible);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", poll);
+      window.removeEventListener("focus", onVisible);
     };
   }, [userId, activeId, apply, refreshTrashedMaps]);
 
