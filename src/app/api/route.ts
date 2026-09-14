@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
 
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://bulut-kappa.vercel.app";
+const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://bulut.my";
 
 export async function GET(_req: NextRequest) {
   return Response.json({
     name: "Bulut API",
     version: "3.0",
     docs: `${BASE}/BULUT_API.md`,
+    docs_for_ai: `${BASE}/BULUT_CLAUDE.md`,
     auth: {
       how: "Войдите своим аккаунтом → получите токен → шлите его в Authorization: Bearer <token>",
       login: "POST /api/auth/token  { email, password }  → { access_token, refresh_token }",
@@ -20,8 +21,12 @@ export async function GET(_req: NextRequest) {
     endpoints: {
       "POST /api/auth/token": "Вход/обновление токена",
       "GET /api/workspaces": "Ваши комнаты",
+      "GET /api/members": "Участники комнаты (реальные пользователи для assignee)",
       "GET /api/boards": "Доски комнаты (с колонками)",
       "POST /api/boards": "Создать доску",
+      "GET /api/boards/:id": "Одна доска (колонки, счётчики, свои поля)",
+      "PATCH /api/boards/:id": "Изменить доску (name, color, columns, position, restore)",
+      "DELETE /api/boards/:id": "Удалить доску (мягко; ?hard=true — навсегда)",
       "GET /api/tasks": "Список задач (фильтры)",
       "POST /api/tasks": "Создать задачу",
       "GET /api/tasks/:id": "Задача + комментарии",
