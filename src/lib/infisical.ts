@@ -82,11 +82,13 @@ export interface SmtpConfig {
 /** Достаёт SMTP-конфиг из Infisical (с фолбэком на переменные окружения). */
 export async function getSmtpConfig(): Promise<SmtpConfig> {
   let s: Record<string, string> = {};
+  let infisicalError = "";
   try {
     s = await getSecrets();
   } catch (e) {
     // Фолбэк: если Infisical недоступен, пробуем переменные окружения процесса
     s = {};
+    infisicalError = e instanceof Error ? e.message : String(e);
   }
   const pick = (k: string) => s[k] ?? process.env[k] ?? "";
 
@@ -94,7 +96,10 @@ export async function getSmtpConfig(): Promise<SmtpConfig> {
   const password = pick("SMTP_PASSWORD");
   const username = pick("SMTP_USERNAME");
   if (!host || !username || !password) {
-    throw new Error("SMTP не настроен в Infisical (SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD)");
+    throw new Error(
+      "SMTP не настроен (нет SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD)" +
+        (infisicalError ? `; Infisical недоступен: ${infisicalError}` : ""),
+    );
   }
 
   return {

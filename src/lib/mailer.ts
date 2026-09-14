@@ -3,12 +3,15 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { getSmtpConfig } from "./infisical";
 
 let transporter: Transporter | null = null;
-let cachedFrom = "";
+let transportKey = "";
 
 async function getTransport(): Promise<{ transport: Transporter; from: string }> {
   const cfg = await getSmtpConfig();
-  cachedFrom = `"${cfg.fromName}" <${cfg.from}>`;
-  if (!transporter) {
+  const from = `"${cfg.fromName}" <${cfg.from}>`;
+  // Ключ включает пароль: после ротации ключей в Infisical соединение
+  // пересоздаётся само, без передеплоя.
+  const key = `${cfg.host}:${cfg.port}:${cfg.username}:${cfg.password}:${cfg.starttls}`;
+  if (!transporter || key !== transportKey) {
     transporter = nodemailer.createTransport({
       host: cfg.host,
       port: cfg.port,
@@ -16,8 +19,15 @@ async function getTransport(): Promise<{ transport: Transporter; from: string }>
       requireTLS: cfg.starttls,
       auth: { user: cfg.username, pass: cfg.password },
     });
+    transportKey = key;
   }
-  return { transport: transporter, from: cachedFrom };
+  return { transport: transporter, from };
+}
+
+/** Проверка соединения и логина на SMTP — для диагностики почты. */
+export async function verifySmtp(): Promise<void> {
+  const { transport } = await getTransport();
+  await transport.verify();
 }
 
 function otpEmailHtml(code: string, name: string): string {

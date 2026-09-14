@@ -47,13 +47,23 @@ export async function POST(req: NextRequest) {
     await sendOtpEmail(email, code, name);
   } catch (e) {
     console.error("OTP send failed:", e);
-    return Response.json(
-      {
-        error:
-          "Не удалось отправить письмо. Проверьте настройки почты (Infisical/SMTP) на сервере или адрес.",
-      },
-      { status: 502 },
-    );
+    const err = e as { code?: string; responseCode?: number; message?: string };
+    const msg = err?.message ?? "";
+    // Разные причины — разные подсказки, иначе владелец не поймёт, что чинить.
+    let text =
+      "Не удалось отправить письмо с кодом. Попросите владельца Bulut создать вам аккаунт вручную.";
+    if (err?.code === "EAUTH" || err?.responseCode === 535 || err?.responseCode === 534) {
+      text =
+        "Почтовый сервер отклонил пароль отправителя (SMTP). Регистрация по коду временно недоступна — " +
+        "попросите владельца Bulut создать вам аккаунт.";
+    } else if (/SMTP не настроен/.test(msg)) {
+      text =
+        "Почта на сервере не настроена (нет SMTP-ключей). Попросите владельца Bulut создать вам аккаунт.";
+    } else if (err?.code === "ETIMEDOUT" || err?.code === "ECONNECTION" || err?.code === "ESOCKET") {
+      text =
+        "Почтовый сервер не отвечает. Попробуйте позже или попросите владельца Bulut создать вам аккаунт.";
+    }
+    return Response.json({ error: text, code: err?.code ?? null }, { status: 502 });
   }
 
   return Response.json({ ok: true, ticket });
