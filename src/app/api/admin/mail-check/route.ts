@@ -35,8 +35,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    await verifySmtp();
-    return Response.json({ ok: true, smtp: "login ok" });
+    const { channel } = await verifySmtp();
+    return Response.json({ ok: true, channel, note: channel === "resend" ? "Resend API отвечает" : "SMTP-логин принят" });
   } catch (e) {
     const err = e as { code?: string; responseCode?: number; message?: string };
     return Response.json(

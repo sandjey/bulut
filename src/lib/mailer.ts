@@ -24,10 +24,68 @@ async function getTransport(): Promise<{ transport: Transporter; from: string }>
   return { transport: transporter, from };
 }
 
-/** Проверка соединения и логина на SMTP — для диагностики почты. */
-export async function verifySmtp(): Promise<void> {
+/** Ключ Resend (HTTP API). Если задан — письма уходят через него, без SMTP. */
+function resendKey(): string {
+  return process.env.RESEND_API_KEY?.trim() ?? "";
+}
+
+/** Адрес отправителя для Resend: домен должен быть подтверждён в Resend. */
+function resendFrom(): string {
+  const addr = process.env.MAIL_FROM?.trim() || "no-reply@bulut.my";
+  const name = process.env.MAIL_FROM_NAME?.trim() || "Bulut";
+  return `${name} <${addr}>`;
+}
+
+interface Letter {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/** Единая отправка: сначала Resend (если настроен), иначе SMTP. */
+async function deliver(letter: Letter): Promise<void> {
+  const key = resendKey();
+  if (key) {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: resendFrom(),
+        to: [letter.to],
+        subject: letter.subject,
+        text: letter.text,
+        html: letter.html,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw Object.assign(new Error(`Resend отклонил письмо: ${res.status} ${body.slice(0, 300)}`), {
+        code: res.status === 401 || res.status === 403 ? "EAUTH" : "ERESEND",
+      });
+    }
+    return;
+  }
+  const { transport, from } = await getTransport();
+  await transport.sendMail({ from, ...letter });
+}
+
+/** Проверка канала отправки — для диагностики почты. */
+export async function verifySmtp(): Promise<{ channel: "resend" | "smtp" }> {
+  if (resendKey()) {
+    const res = await fetch("https://api.resend.com/domains", {
+      headers: { Authorization: `Bearer ${resendKey()}` },
+    });
+    if (!res.ok) {
+      throw Object.assign(new Error(`Resend: ${res.status} ${(await res.text()).slice(0, 200)}`), {
+        code: res.status === 401 || res.status === 403 ? "EAUTH" : "ERESEND",
+      });
+    }
+    return { channel: "resend" };
+  }
   const { transport } = await getTransport();
   await transport.verify();
+  return { channel: "smtp" };
 }
 
 function otpEmailHtml(code: string, name: string): string {
@@ -72,9 +130,7 @@ function escapeHtml(s: string): string {
 }
 
 export async function sendOtpEmail(email: string, code: string, name: string): Promise<void> {
-  const { transport, from } = await getTransport();
-  await transport.sendMail({
-    from,
+  await deliver({
     to: email,
     subject: `Код подтверждения Bulut: ${code}`,
     text: `Ваш код подтверждения регистрации в Bulut: ${code}\nКод действует 10 минут.`,
@@ -122,7 +178,6 @@ export async function sendNotifyEmail(
   body: string,
   url: string | null,
 ): Promise<void> {
-  const { transport, from } = await getTransport();
   const button = url
     ? `<tr><td style="padding:20px 36px"><a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:11px 22px;border-radius:12px">Открыть в Bulut</a></td></tr>`
     : "";
@@ -138,8 +193,7 @@ export async function sendNotifyEmail(
     </table>
   </td></tr></table>
 </body></html>`;
-  await transport.sendMail({
-    from,
+  await deliver({
     to: email,
     subject: `Bulut · ${title}`,
     text: `${title}\n\n${body}${url ? `\n\n${url}` : ""}`,
@@ -148,9 +202,7 @@ export async function sendNotifyEmail(
 }
 
 export async function sendInviteEmail(email: string, workspace: string, url: string): Promise<void> {
-  const { transport, from } = await getTransport();
-  await transport.sendMail({
-    from,
+  await deliver({
     to: email,
     subject: `Приглашение в «${workspace}» — Bulut`,
     text: `Вас пригласили в комнату «${workspace}» в Bulut.\nПринять: ${url}\nСсылка действует 14 дней.`,

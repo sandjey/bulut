@@ -90,7 +90,9 @@ export async function getSmtpConfig(): Promise<SmtpConfig> {
     s = {};
     infisicalError = e instanceof Error ? e.message : String(e);
   }
-  const pick = (k: string) => s[k] ?? process.env[k] ?? "";
+  // Приоритет: BULUT_SMTP_* из окружения → SMTP_* из окружения → SMTP_* из Infisical.
+  // Так Bulut может иметь свой ящик, не трогая общие ключи чужого проекта.
+  const pick = (k: string) => process.env[`BULUT_${k}`] || process.env[k] || s[k] || "";
 
   const host = pick("SMTP_HOST");
   const password = pick("SMTP_PASSWORD");
@@ -110,5 +112,6 @@ export async function getSmtpConfig(): Promise<SmtpConfig> {
     password,
     from: pick("SMTP_FROM") || username,
     fromName: pick("SMTP_FROM_NAME") || "Bulut",
+    // имя отправителя из чужого проекта не подставляем — письма подписываем Bulut
   };
 }
