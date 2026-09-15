@@ -43,7 +43,8 @@ export function RoomInvitePanel() {
   const [copied, setCopied] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   // Создание аккаунта вручную (когда человек ещё не зарегистрирован)
-  const [createFor, setCreateFor] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
   const [newJob, setNewJob] = useState(MEMBER_ROLES[0]);
   const [creating, setCreating] = useState(false);
@@ -69,13 +70,13 @@ export function RoomInvitePanel() {
     setBusy(true);
     setMsg(null);
     setLastLink(null);
-    setCreateFor(null);
     setCredentials(null);
     // Приглашать можно только зарегистрированных пользователей Bulut.
     const prof = await findProfileByEmail(em);
     if (!prof) {
       setBusy(false);
-      setCreateFor(em);
+      setCreateOpen(true);
+      setNewEmail(em);
       setNewName("");
       setMsg({
         ok: false,
@@ -95,7 +96,7 @@ export function RoomInvitePanel() {
 
   /** Создать аккаунт человеку и сразу пригласить его в комнату. */
   const createAccount = async () => {
-    const em = (createFor ?? "").trim();
+    const em = newEmail.trim().toLowerCase();
     if (!em || !newName.trim()) return;
     setCreating(true);
     setMsg(null);
@@ -121,7 +122,9 @@ export function RoomInvitePanel() {
       // Аккаунт есть — приглашаем в комнату.
       const inv = await inviteMember(em, role);
       setCreating(false);
-      setCreateFor(null);
+      setCreateOpen(false);
+      setNewEmail("");
+      setNewName("");
       setCredentials({ email: data.email, password: data.password });
       if ("error" in inv) {
         setMsg({ ok: false, text: `Аккаунт создан, но приглашение не отправилось: ${inv.error}` });
@@ -198,24 +201,50 @@ export function RoomInvitePanel() {
               Пригласить
             </button>
           </div>
+
+          {/* Человека ещё нет в Bulut — заводим аккаунт сами, без письма с кодом */}
+          <button
+            type="button"
+            onClick={() => {
+              setMsg(null);
+              setCredentials(null);
+              setNewEmail(email.trim());
+              setCreateOpen((v) => !v);
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand transition hover:underline"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            {createOpen ? "Скрыть создание аккаунта" : "Человека ещё нет в Bulut — создать аккаунт"}
+          </button>
           {msg && (
             <p className={cn("mt-2 text-xs font-medium", msg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
               {msg.text}
             </p>
           )}
-          {createFor && (
-            <div className="mt-3 rounded-xl border border-border bg-surface-2/40 p-3">
-              <p className="text-xs font-semibold text-fg">
-                Создать аккаунт для <span className="text-brand">{createFor}</span>
-              </p>
+          {createOpen && (
+            <div className="mt-2 rounded-xl border border-border bg-surface-2/40 p-3">
+              <p className="text-xs font-semibold text-fg">Новый аккаунт</p>
               <p className="mt-1 text-[11px] text-muted">
                 Пароль сгенерируется автоматически — передайте его человеку, он сменит пароль в профиле.
+                Приглашение в комнату «{active.name}» отправится сразу.
               </p>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <div className="relative flex-1">
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <div className="relative min-w-[200px] flex-1">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
+                  <input
+                    type="email"
+                    autoFocus={!newEmail}
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && createAccount()}
+                    placeholder="email@example.com"
+                    className="input pl-9"
+                  />
+                </div>
+                <div className="relative min-w-[200px] flex-1">
                   <UserIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
                   <input
-                    autoFocus
+                    autoFocus={!!newEmail}
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && createAccount()}
@@ -230,11 +259,15 @@ export function RoomInvitePanel() {
                     </option>
                   ))}
                 </select>
-                <button className="btn-primary" onClick={createAccount} disabled={creating || !newName.trim()}>
+                <button
+                  className="btn-primary"
+                  onClick={createAccount}
+                  disabled={creating || !newName.trim() || !newEmail.trim()}
+                >
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
                   Создать и пригласить
                 </button>
-                <button className="btn-outline" onClick={() => setCreateFor(null)} disabled={creating}>
+                <button className="btn-outline" onClick={() => setCreateOpen(false)} disabled={creating}>
                   Отмена
                 </button>
               </div>
