@@ -111,12 +111,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const supabase = getSupabase();
       if (!supabase) return { error: "Supabase не настроен" };
 
-      // 1) Проверяем OTP-код на сервере (почта подтверждена).
+      // 1) Проверяем OTP-код и создаём подтверждённый аккаунт на сервере
+      //    (service_role, email_confirm: true). Обычный supabase.auth.signUp()
+      //    тут не подходит: на этом проекте Supabase mailer_autoconfirm
+      //    выключен, поэтому signUp создавал пользователя без сессии и без
+      //    ошибки — форма регистрации молча зависала.
       try {
         const res = await fetch("/api/auth/otp/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim(), code: code.trim(), ticket }),
+          body: JSON.stringify({ email: email.trim(), code: code.trim(), ticket, password }),
         });
         const verified = await safeJson(res);
         if (!res.ok) return { error: verified?.error ?? `Ошибка проверки кода (${res.status})` };
@@ -124,12 +128,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова." };
       }
 
-      // 2) Создаём аккаунт в Supabase (проект в режиме autoconfirm → сразу сессия).
-      const { error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: { data: { full_name: name.trim(), name: name.trim(), role } },
-      });
+      // 2) Аккаунт уже создан и подтверждён — входим паролем, чтобы получить сессию.
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) return { error: translateError(error.message) };
 
       // Запоминаем, кто вошёл, чтобы приложение сразу знало имя пользователя.
