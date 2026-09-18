@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   User as UserIcon,
   Briefcase,
+  ChevronDown,
   ArrowLeft,
   ShieldCheck,
 } from "lucide-react";
@@ -226,7 +227,7 @@ export function LoginScreen() {
                       <div className="relative">
                         <Briefcase className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                         <select
-                          className="input pl-9"
+                          className="input appearance-none pl-9 pr-9"
                           value={role}
                           onChange={(e) => setRole(e.target.value)}
                           disabled={!configured}
@@ -237,6 +238,7 @@ export function LoginScreen() {
                             </option>
                           ))}
                         </select>
+                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                       </div>
                     </div>
                   </>
