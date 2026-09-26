@@ -1,4 +1,5 @@
-import { AppData } from "./types";
+import type { Task } from "./types";
+import type { FeedComment } from "./db";
 import { todayISO } from "./date";
 import { parseISO, isValid, differenceInCalendarDays } from "date-fns";
 
@@ -14,13 +15,16 @@ export interface Notif {
   at: string; // ISO — for ordering / unread comparison
 }
 
-/** Derive notifications for the member `me` from current app data. */
-export function buildNotifications(data: AppData, me: string): Notif[] {
+/**
+ * Уведомления для `me`: сроки — из моих активных задач (набор «mine»),
+ * возвраты и упоминания — из ленты, которую отобрала база (fetchNotificationFeed).
+ */
+export function buildNotifications(input: { tasks: Task[]; feed: FeedComment[] }, me: string): Notif[] {
   if (!me) return [];
   const today = todayISO();
   const out: Notif[] = [];
 
-  const myTasks = data.tasks.filter((t) => t.assignee === me && t.status !== "done");
+  const myTasks = input.tasks.filter((t) => t.assignee === me && t.status !== "done");
 
   // overdue / due soon
   myTasks.forEach((t) => {
@@ -53,10 +57,8 @@ export function buildNotifications(data: AppData, me: string): Notif[] {
 
   // returns on my tasks + mentions of me, from comments
   const meLower = me.toLowerCase();
-  const taskById = new Map(data.tasks.map((t) => [t.id, t]));
-  data.comments.forEach((c) => {
-    const task = taskById.get(c.taskId);
-    if (!task) return;
+  input.feed.forEach((c) => {
+    const task = c.task;
     if (c.kind === "return" && task.assignee === me) {
       out.push({
         id: `ret-${c.id}`,

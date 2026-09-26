@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -34,7 +34,11 @@ export default function AnalyticsPage() {
 }
 
 function AnalyticsPageInner() {
-  const { boards, tasks, journal } = useStore();
+  const { boards, tasks, journal, ensureTasks, ensureJournal } = useStore();
+  useEffect(() => {
+    void ensureTasks({ kind: "all" });
+    void ensureJournal(false);
+  }, [ensureTasks, ensureJournal]);
   const { theme } = useTheme();
   const axisColor = theme === "dark" ? "#94a3b8" : "#64748b";
   const gridColor = theme === "dark" ? "#1f2937" : "#e2e8f0";

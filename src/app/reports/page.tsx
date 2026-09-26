@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -46,7 +46,11 @@ export default function ReportsPage() {
 }
 
 function ReportsPageInner() {
-  const { boards, tasks, journal, members } = useStore();
+  const { boards, tasks, journal, members, ensureTasks, ensureJournal } = useStore();
+  useEffect(() => {
+    void ensureTasks({ kind: "all" });
+    void ensureJournal(false);
+  }, [ensureTasks, ensureJournal]);
   const canExport = useCan()("reports.export");
   const [period, setPeriod] = useState<Period>("week");
   const [ref, setRef] = useState<Date>(() => new Date());

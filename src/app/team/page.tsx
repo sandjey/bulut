@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Users, Mail, CheckCircle2, Clock } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useTeam } from "@/lib/team";
@@ -20,8 +20,11 @@ export default function TeamPage() {
 }
 
 function TeamPageInner() {
-  const { tasks } = useStore();
+  const { tasks, ensureTasks } = useStore();
   const team = useTeam();
+  useEffect(() => {
+    void ensureTasks({ kind: "all" });
+  }, [ensureTasks]);
 
   const counts = useMemo(() => {
     const map = new Map<string, { active: number; done: number }>();

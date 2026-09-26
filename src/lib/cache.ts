@@ -37,9 +37,18 @@ export function saveCache(userId: string, data: AppData): void {
     // а грузятся по требованию при открытии карточки. undefined = «не загружены»
     // (JSON.stringify такие поля просто выбрасывает), поэтому после чтения кэша
     // карточка честно сходит за фото на сервер, а не решит, что их нет.
+    // Описание, кастомные поля и комментарии тоже не кладём: это «детали
+    // карточки», они грузятся при её открытии. В кэше — только сводки.
     const slim: AppData = {
       ...data,
-      tasks: data.tasks.map(({ photos, ...t }) => t),
+      tasks: data.tasks.map((t) => ({
+        ...t,
+        photos: undefined,
+        desc: "",
+        custom: {},
+        detailsLoaded: false,
+      })),
+      comments: [],
     };
     window.localStorage.setItem(keyFor(userId), JSON.stringify(slim));
   } catch (e) {

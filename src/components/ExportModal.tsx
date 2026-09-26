@@ -23,7 +23,13 @@ export function ExportModal({
   defaultQuery?: string;
 }) {
   const store = useStore();
-  const { boards, tasks, journal } = store;
+  const { boards, tasks, journal, ensureTasks, ensureJournal } = store;
+  // В выгрузку идут все задачи и журнал с заметками.
+  useEffect(() => {
+    if (!open) return;
+    void ensureTasks({ kind: "all" });
+    void ensureJournal(true);
+  }, [open, ensureTasks, ensureJournal]);
 
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");

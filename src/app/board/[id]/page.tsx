@@ -54,7 +54,14 @@ function BoardPageInner() {
   const searchParams = useSearchParams();
   const boardId = params.id as string;
 
-  const { boards, tasks, moveTask, addColumn, updateBoard, createTask, updateTask } = useStore();
+  const { boards, tasks, moveTask, addColumn, updateBoard, createTask, updateTask, ensureTasks, isScopeLoaded } =
+    useStore();
+  // Задачи только этой доски — остальные доски не качаем.
+  const scope = useMemo(() => ({ kind: "board" as const, boardId }), [boardId]);
+  useEffect(() => {
+    void ensureTasks(scope);
+  }, [scope, ensureTasks]);
+  const scopeReady = isScopeLoaded(scope);
   const can = useCan();
   // Права по разрешениям
   const permManage = can("board.manage");
@@ -166,7 +173,7 @@ function BoardPageInner() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, boards]);
+  }, [searchParams, boards, scopeReady]);
 
   // Горячая клавиша: N — новая задача (когда не печатаешь в поле)
   useEffect(() => {
@@ -313,6 +320,12 @@ function BoardPageInner() {
           <span className="text-sm text-muted">
             {boardTasks.filter((t) => t.status === "done").length}/{boardTasks.length}
           </span>
+          {!scopeReady && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted" title="Загружаем задачи доски">
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-border border-t-brand" />
+              {boardTasks.length === 0 ? "Загружаем задачи…" : "Обновляем…"}
+            </span>
+          )}
 
           {/* color picker */}
           {canManage && (
@@ -508,7 +521,7 @@ function BoardPageInner() {
         open={modalOpen}
         onClose={closeModal}
         board={board}
-        task={editingTask}
+        task={editingTask ? tasks.find((t) => t.id === editingTask.id) ?? editingTask : null}
         defaultColumnId={defaultCol}
         viewOnly={!editMode}
       />

@@ -30,14 +30,16 @@ import {
   REVIEW_COLUMN_NAME,
 } from "./types";
 import * as db from "./db";
+import { scopeKey, taskInScope, type TaskScope, type BoardStats } from "./db";
 import { loadCache, saveCache } from "./cache";
 import { useAuth } from "./auth";
 import { useWorkspace } from "./workspace";
 import { getMe } from "./me";
 import { avatarColor } from "./utils";
 import { JournalTrigger } from "./settings";
-import { formatDuration } from "./date";
+import { formatDuration, todayISO } from "./date";
 import { accrueStageTimes, stageTimeList } from "./stages";
+import { isTaskOverdue } from "./deadlines";
 import { format } from "date-fns";
 
 /** Seconds elapsed between two ISO timestamps (never negative). */
@@ -159,6 +161,12 @@ function migrateBoardColumns(board: Board): { columns: Column[]; changed: boolea
   return { columns, changed: true };
 }
 
+export type { TaskScope, BoardStats } from "./db";
+export type JournalScope = "none" | "slim" | "full";
+
+/** Сколько открытых карточек держим «в деталях» (описание + комментарии). */
+const DETAIL_LRU = 30;
+
 export interface NewTaskInput {
   boardId: string;
   columnId: string;
@@ -234,6 +242,22 @@ interface StoreContextValue extends AppData {
   refetch: () => Promise<void>;
   /** Подгрузить фото задачи (открыли карточку) — они не приходят с общей загрузкой. */
   loadTaskPhotos: (taskId: string) => Promise<void>;
+  // ---- слои загрузки ----
+  /** Счётчики по доскам (для главной): считает база, для загруженных досок — из памяти. */
+  boardStats: Record<string, BoardStats>;
+  /** Догрузить набор задач (доска / мои / карта / все). Повторный вызов — no-op. */
+  ensureTasks: (scope: TaskScope) => Promise<void>;
+  /** Набор уже в памяти (с сервера, не из кэша). */
+  isScopeLoaded: (scope: TaskScope) => boolean;
+  /** Набор сейчас грузится. */
+  isScopeLoading: (scope: TaskScope) => boolean;
+  /** Журнал: none — не грузили, slim — без заметок, full — с заметками. */
+  journalScope: JournalScope;
+  ensureJournal: (full?: boolean) => Promise<void>;
+  /** Описание, кастомные поля и комментарии карточки — при её открытии. */
+  ensureTaskDetails: (taskId: string) => Promise<Task | undefined>;
+  /** Растёт после каждой сверки с сервером — чтобы перезапросить свои данные. */
+  dataVersion: number;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -258,6 +282,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // чтобы чужое realtime-событие не затёрло наши оптимистичные изменения.
   const pending = useRef(0);
 
+  // ---- что именно загружено (слои) ----
+  // Наборы задач, которые уже пришли с сервера, и те, что грузятся прямо сейчас.
+  const scopesRef = useRef<Map<string, TaskScope>>(new Map());
+  const [loadedScopes, setLoadedScopes] = useState<string[]>([]);
+  const scopeInflight = useRef<Map<string, Promise<void>>>(new Map());
+  const [loadingScopes, setLoadingScopes] = useState<string[]>([]);
+  // Журнал — отдельный слой: без заметок хватает отчётам и логике этапов.
+  const journalScopeRef = useRef<JournalScope>("none");
+  const [journalScope, setJournalScope] = useState<JournalScope>("none");
+  const journalInflight = useRef<Promise<void> | null>(null);
+  // Карточки, у которых на руках детали (описание + комментарии), по давности.
+  const detailIds = useRef<string[]>([]);
+  const detailInflight = useRef<Map<string, Promise<Task | undefined>>>(new Map());
+  const [serverStats, setServerStats] = useState<Record<string, BoardStats>>({});
+  const [dataVersion, setDataVersion] = useState(0);
+
   const EMPTY_TRASH: TrashData = useMemo(() => ({ boards: [], tasks: [], journal: [] }), []);
   const [trash, setTrash] = useState<TrashData>({ boards: [], tasks: [], journal: [] });
   const trashRef = useRef<TrashData>({ boards: [], tasks: [], journal: [] });
@@ -270,7 +310,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Метка синхронизации комнаты (db.fetchSyncStamp): пока она не изменилась,
   // опрос вообще не качает данные — только ~200 байт на проверку.
   // null — сервер метку не отдаёт (миграция 20240131 не применена): тогда
-  // работаем по-старому, полной загрузкой.
+  // работаем по-старому, полной перезагрузкой загруженных слоёв.
   const syncStamp = useRef<string | null>(null);
 
   const apply = useCallback((next: AppData) => {
@@ -278,41 +318,170 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setData(next);
   }, []);
 
-  /**
-   * С сервера задачи приходят без фото (base64 качаем лениво, по карточке),
-   * поэтому переносим уже загруженные фото из текущего состояния — иначе
-   * открытая карточка теряла бы картинки на каждом опросе.
-   */
-  const mergePhotos = useCallback((fresh: AppData): AppData => {
-    const loaded = new Map<string, TaskPhoto[]>();
-    for (const t of dataRef.current.tasks) if (t.photos) loaded.set(t.id, t.photos);
-    if (!loaded.size) return fresh;
-    return {
-      ...fresh,
-      tasks: fresh.tasks.map((t) => {
-        if (t.photos !== undefined) return t;
-        const mine = loaded.get(t.id);
-        if (!mine) return t;
-        // Счётчик с сервера разошёлся с тем, что у нас на руках — значит фото
-        // поменял кто-то другой. Оставляем поле пустым: карточка перекачает их.
-        if (t.photoCount !== undefined && t.photoCount !== mine.length) return t;
-        return { ...t, photos: mine };
-      }),
-    };
+  const syncScopeState = useCallback(() => {
+    setLoadedScopes(Array.from(scopesRef.current.keys()));
+    setLoadingScopes(Array.from(scopeInflight.current.keys()));
   }, []);
 
-  /** Полная загрузка с сервера + запоминание метки синхронизации. */
-  const loadFresh = useCallback(
-    async (uid: string): Promise<AppData> => {
-      // Метку берём параллельно с данными: если что-то изменится между двумя
-      // запросами, метка окажется «старее» данных — тогда следующий опрос
-      // просто перезагрузит лишний раз. Пропустить изменение так нельзя.
-      const [stamp, fresh] = await Promise.all([db.fetchSyncStamp(), db.fetchAll(uid)]);
-      syncStamp.current = stamp;
-      return mergePhotos(fresh);
+  /**
+   * Перенести в свежую сводку то, что есть только у нас на руках: детали
+   * (описание, кастомные поля), фото и счётчик комментариев. Иначе открытая
+   * карточка теряла бы содержимое на каждом опросе.
+   */
+  const carryOver = useCallback((old: Task | undefined, fresh: Task): Task => {
+    if (!old) return fresh;
+    let t = fresh;
+    if (old.detailsLoaded && !fresh.detailsLoaded) {
+      t = { ...t, desc: old.desc, custom: old.custom, detailsLoaded: true };
+    }
+    if (fresh.photos === undefined && old.photos !== undefined) {
+      // Счётчик с сервера разошёлся с тем, что у нас на руках — значит фото
+      // поменял кто-то другой. Оставляем поле пустым: карточка перекачает их.
+      if (fresh.photoCount === undefined || fresh.photoCount === old.photos.length) {
+        t = { ...t, photos: old.photos };
+      }
+    }
+    if (fresh.commentCount === undefined && old.commentCount !== undefined) {
+      t = { ...t, commentCount: old.commentCount };
+    }
+    return t;
+  }, []);
+
+  /**
+   * Влить свежие сводки наборов в память. Задача, которая по нашим данным
+   * входила в один из наборов, но с сервера не пришла — выпала (удалена или
+   * переехала): убираем. Остальное (задачи из незагруженных наборов) не трогаем.
+   */
+  const mergeTasks = useCallback(
+    (current: Task[], fresh: Task[], scopes: TaskScope[]): Task[] => {
+      const byId = new Map(current.map((t) => [t.id, t]));
+      const freshIds = new Set(fresh.map((t) => t.id));
+      const inAny = (t: Task) => scopes.some((s) => taskInScope(t, s));
+      const kept = current.filter((t) => !freshIds.has(t.id) && !inAny(t));
+      const seen = new Set<string>();
+      const merged: Task[] = [];
+      for (const f of fresh) {
+        if (seen.has(f.id)) continue; // одна задача может прийти из двух наборов
+        seen.add(f.id);
+        merged.push(carryOver(byId.get(f.id), f));
+      }
+      return [...kept, ...merged];
     },
-    [mergePhotos]
+    [carryOver],
   );
+
+  /** Записать в память детали и комментарии карточек (после fetchTaskDetails/fetchCommentsFor). */
+  const applyDetails = useCallback(
+    (
+      base: AppData,
+      details: { id: string; desc: string; custom: Record<string, string> }[],
+      comments: TaskComment[],
+      ids: string[],
+    ): AppData => {
+      const byId = new Map(details.map((d) => [d.id, d]));
+      const idSet = new Set(ids);
+      const countByTask = new Map<string, number>();
+      for (const c of comments) countByTask.set(c.taskId, (countByTask.get(c.taskId) ?? 0) + 1);
+      const fetchedIds = new Set(comments.map((c) => c.id));
+      // Свои свежие комментарии (ещё не подтверждённые сервером) не теряем.
+      const local = base.comments.filter((c) => idSet.has(c.taskId) && !fetchedIds.has(c.id) && pending.current > 0);
+      const tasks = base.tasks.map((t) => {
+        if (!idSet.has(t.id)) return t;
+        const d = byId.get(t.id);
+        return {
+          ...t,
+          desc: d?.desc ?? t.desc,
+          custom: d?.custom ?? t.custom,
+          detailsLoaded: true,
+          commentCount: (countByTask.get(t.id) ?? 0) + local.filter((c) => c.taskId === t.id).length,
+        };
+      });
+      const others = base.comments.filter((c) => !idSet.has(c.taskId));
+      return { ...base, tasks, comments: [...others, ...comments, ...local] };
+    },
+    [],
+  );
+
+  /** Отметить карточку как «с деталями»; самые старые сверх лимита — облегчить. */
+  const rememberDetails = useCallback(
+    (id: string) => {
+      const list = detailIds.current.filter((x) => x !== id);
+      list.push(id);
+      const dropped: string[] = [];
+      while (list.length > DETAIL_LRU) dropped.push(list.shift()!);
+      detailIds.current = list;
+      if (!dropped.length) return;
+      const drop = new Set(dropped);
+      const d = dataRef.current;
+      apply({
+        ...d,
+        tasks: d.tasks.map((t) =>
+          drop.has(t.id) ? { ...t, desc: "", custom: {}, photos: undefined, detailsLoaded: false } : t,
+        ),
+        comments: d.comments.filter((c) => !drop.has(c.taskId)),
+      });
+    },
+    [apply],
+  );
+
+  /** Счётчики комментариев для карточек доски (значок), без текстов. */
+  const loadCommentCounts = useCallback(
+    async (boardId: string) => {
+      const ids = dataRef.current.tasks.filter((t) => t.boardId === boardId).map((t) => t.id);
+      if (!ids.length) return;
+      try {
+        const counts = await db.fetchCommentCounts(boardId, ids);
+        const d = dataRef.current;
+        apply({
+          ...d,
+          tasks: d.tasks.map((t) => (t.boardId === boardId ? { ...t, commentCount: counts.get(t.id) ?? 0 } : t)),
+        });
+      } catch (e) {
+        console.error("Не удалось загрузить счётчики комментариев", e);
+      }
+    },
+    [apply],
+  );
+
+  /**
+   * Полная сверка загруженных слоёв с сервером: ядро (доски, счётчики),
+   * все загруженные наборы задач, журнал (если грузили), детали и комментарии
+   * открытых карточек. Ничего сверх того, что уже показываем.
+   */
+  const refresh = useCallback(async () => {
+    const scopes = Array.from(scopesRef.current.values());
+    // «все» покрывает остальные наборы — их отдельно не тянем
+    const toFetch = scopes.some((s) => s.kind === "all") ? [{ kind: "all" } as TaskScope] : scopes;
+    const ids = detailIds.current.slice();
+    const jScope = journalScopeRef.current;
+    // Метку берём параллельно с данными: если что-то изменится между двумя
+    // запросами, метка окажется «старее» данных — тогда следующий опрос
+    // просто перезагрузит лишний раз. Пропустить изменение так нельзя.
+    const [stamp, boards, stats, scopeResults, journal, details, comments] = await Promise.all([
+      db.fetchSyncStamp(),
+      db.fetchBoards(),
+      db.fetchBoardStats(todayISO()),
+      Promise.all(toFetch.map((s) => db.fetchTaskSummaries(s))),
+      jScope === "none" ? Promise.resolve(null) : db.fetchJournal(jScope === "full"),
+      ids.length ? db.fetchTaskDetails(ids) : Promise.resolve([]),
+      ids.length ? db.fetchCommentsFor(ids) : Promise.resolve([]),
+    ]);
+    syncStamp.current = stamp;
+    const cur = dataRef.current;
+    let next: AppData = {
+      ...cur,
+      boards,
+      tasks: mergeTasks(cur.tasks, scopeResults.flat(), scopes),
+      journal: journal ?? cur.journal,
+      members: [],
+    };
+    if (ids.length) next = applyDetails(next, details, comments, ids);
+    apply(next);
+    setServerStats(stats);
+    setDataVersion((v) => v + 1);
+    // счётчики комментариев — по загруженным доскам (дёшево: только id)
+    for (const s of scopes) if (s.kind === "board") void loadCommentCounts(s.boardId);
+  }, [apply, mergeTasks, applyDetails, loadCommentCounts]);
 
   const refreshTrash = useCallback(() => {
     db.fetchTrash().then(applyTrash).catch(() => {});
@@ -321,12 +490,116 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refetch = useCallback(async () => {
     if (!userId) return;
     try {
-      apply(await loadFresh(userId));
+      await refresh();
       refreshTrash();
     } catch (e) {
       console.error("Не удалось загрузить данные", e);
     }
-  }, [userId, apply, loadFresh, refreshTrash]);
+  }, [userId, refresh, refreshTrash]);
+
+  /** Догрузить набор задач. Повторный вызов для того же набора — ничего не делает. */
+  const ensureTasks = useCallback(
+    (scope: TaskScope): Promise<void> => {
+      if (!userId || !activeId) return Promise.resolve();
+      if (scope.kind === "ids" && scope.ids.length === 0) return Promise.resolve();
+      const key = scopeKey(scope);
+      const hasAll = scopesRef.current.has("all");
+      if (scopesRef.current.has(key) || (hasAll && scope.kind !== "all")) {
+        // доска уже в памяти через «все» — не хватает только значков комментариев
+        if (scope.kind === "board" && !scopesRef.current.has(key)) {
+          scopesRef.current.set(key, scope);
+          syncScopeState();
+          void loadCommentCounts(scope.boardId);
+        }
+        return Promise.resolve();
+      }
+      const inflight = scopeInflight.current.get(key);
+      if (inflight) return inflight;
+      const p = (async () => {
+        try {
+          const fresh = await db.fetchTaskSummaries(scope);
+          const d = dataRef.current;
+          apply({ ...d, tasks: mergeTasks(d.tasks, fresh, [scope]) });
+          scopesRef.current.set(key, scope);
+          if (scope.kind === "board") await loadCommentCounts(scope.boardId);
+        } catch (e) {
+          console.error("Не удалось загрузить задачи", e);
+        } finally {
+          scopeInflight.current.delete(key);
+          syncScopeState();
+        }
+      })();
+      scopeInflight.current.set(key, p);
+      syncScopeState();
+      return p;
+    },
+    [userId, activeId, apply, mergeTasks, loadCommentCounts, syncScopeState],
+  );
+
+  const isScopeLoaded = useCallback(
+    (scope: TaskScope) => loadedScopes.includes("all") || loadedScopes.includes(scopeKey(scope)),
+    [loadedScopes],
+  );
+  const isScopeLoading = useCallback(
+    (scope: TaskScope) => loadingScopes.includes(scopeKey(scope)),
+    [loadingScopes],
+  );
+
+  /** Догрузить журнал: без заметок (отчёты, логика этапов) или целиком (страница журнала, экспорт). */
+  const ensureJournal = useCallback(
+    (full = false): Promise<void> => {
+      if (!userId || !activeId) return Promise.resolve();
+      const cur = journalScopeRef.current;
+      if (cur === "full" || (cur === "slim" && !full)) return Promise.resolve();
+      if (journalInflight.current) return journalInflight.current;
+      const p = (async () => {
+        try {
+          const journal = await db.fetchJournal(full);
+          apply({ ...dataRef.current, journal });
+          journalScopeRef.current = full ? "full" : "slim";
+          setJournalScope(journalScopeRef.current);
+        } catch (e) {
+          console.error("Не удалось загрузить журнал", e);
+        } finally {
+          journalInflight.current = null;
+        }
+      })();
+      journalInflight.current = p;
+      return p;
+    },
+    [userId, activeId, apply],
+  );
+
+  /** Описание, кастомные поля и комментарии одной карточки — при её открытии. */
+  const ensureTaskDetails = useCallback(
+    (taskId: string): Promise<Task | undefined> => {
+      const t = dataRef.current.tasks.find((x) => x.id === taskId);
+      if (!t) return Promise.resolve(undefined);
+      if (t.detailsLoaded) {
+        rememberDetails(taskId);
+        return Promise.resolve(t);
+      }
+      const inflight = detailInflight.current.get(taskId);
+      if (inflight) return inflight;
+      const p = (async () => {
+        try {
+          const [details, comments] = await Promise.all([db.fetchTaskDetails([taskId]), db.fetchCommentsFor([taskId])]);
+          const next = applyDetails(dataRef.current, details, comments, [taskId]);
+          apply(next);
+          rememberDetails(taskId);
+          return next.tasks.find((x) => x.id === taskId);
+        } catch (e) {
+          console.error("Не удалось загрузить карточку", e);
+          return dataRef.current.tasks.find((x) => x.id === taskId);
+        } finally {
+          detailInflight.current.delete(taskId);
+        }
+      })();
+      detailInflight.current.set(taskId, p);
+      return p;
+    },
+    [apply, applyDetails, rememberDetails],
+  );
 
   /**
    * Подгрузить фото одной задачи (открыли карточку). Единственное место, где
@@ -350,11 +623,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [apply]
   );
 
-  // (Re)load whenever the signed-in user changes.
+  // (Re)load whenever the signed-in user or room changes.
   // Cache-first: hydrate instantly from localStorage (offline-safe, no empty
-  // flash on reload / navigation), then refresh from Supabase in the background.
+  // flash on reload / navigation), then load the core from Supabase. Task
+  // sets are pulled by pages on demand (ensureTasks).
   useEffect(() => {
     let cancelled = false;
+    // другая комната/пользователь — слои прошлой не годятся
+    scopesRef.current = new Map();
+    scopeInflight.current = new Map();
+    journalScopeRef.current = "none";
+    journalInflight.current = null;
+    detailIds.current = [];
+    detailInflight.current = new Map();
+    syncStamp.current = null;
+    setLoadedScopes([]);
+    setLoadingScopes([]);
+    setJournalScope("none");
+    setServerStats({});
+
     if (!userId || !activeId) {
       apply(EMPTY);
       applyTrash(EMPTY_TRASH);
@@ -363,8 +650,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setSyncing(false);
       return;
     }
-
-    syncStamp.current = null; // другая комната/пользователь — метка прошлой не годится
 
     const cached = cacheKey ? loadCache(cacheKey) : null;
     if (cached) {
@@ -377,10 +662,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setSyncing(false);
     }
 
-    loadFresh(userId)
-      .then((fresh) => {
+    refresh()
+      .then(() => {
         if (!cancelled) {
-          apply(fresh);
           setReady(true);
           setSyncing(false);
           refreshTrash();
@@ -397,7 +681,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [userId, activeId, cacheKey, apply, applyTrash, loadFresh, refreshTrash, EMPTY_TRASH]);
+  }, [userId, activeId, cacheKey, apply, applyTrash, refresh, refreshTrash, EMPTY_TRASH]);
 
   // Write-through: persist every state change to the offline cache (по комнате)
   useEffect(() => {
@@ -417,7 +701,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId || !activeId) return;
 
     let busy = false;
-
     const poll = async () => {
       if (busy) return; // предыдущий опрос ещё идёт (медленная сеть)
       if (pending.current > 0) return; // не затираем свои неподтверждённые записи
@@ -428,7 +711,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // Метка есть и не менялась — в комнате ничего не произошло, данные не тянем.
         if (stamp && stamp === syncStamp.current) return;
         if (pending.current > 0) return; // пока проверяли метку, начали писать свои правки
-        apply(await loadFresh(userId));
+        await refresh();
       } catch (e) {
         console.error(e);
       } finally {
@@ -448,7 +731,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [userId, activeId, apply, loadFresh]);
+  }, [userId, activeId, refresh]);
 
   /** Fire-and-forget DB write; on failure, re-sync from server. */
   const persist = useCallback(
@@ -465,6 +748,40 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
     },
     [refetch]
+  );
+
+  /**
+   * Запись в журнал при смене этапа. Заметка строится из описания карточки,
+   * а в памяти обычно только сводка — поэтому сначала дотягиваем детали.
+   * Если журнал не загружен, дубликаты отсекает база (insertJournalIfNoStage).
+   */
+  const logStage = useCallback(
+    (task: Task, board: Board | undefined, mode: "review" | "ensureDev") => {
+      const run = (full: Task) => {
+        const d = dataRef.current;
+        const res =
+          mode === "review" ? appendLog(d.journal, full, board, "review") : ensureDevRecord(d.journal, full, board);
+        if (!res.entry) return;
+        if (journalScopeRef.current !== "none") apply({ ...d, journal: res.journal });
+        if (userId) {
+          persist(
+            mode === "ensureDev" ? db.insertJournalIfNoStage(res.entry, userId) : db.insertJournal(res.entry, userId),
+          );
+        }
+      };
+      if (task.detailsLoaded) {
+        run(task);
+        return;
+      }
+      pending.current++; // чтобы опрос не сработал между переносом и записью в журнал
+      ensureTaskDetails(task.id)
+        .then((full) => run(full ? { ...task, desc: full.desc } : task))
+        .catch(() => run(task))
+        .finally(() => {
+          pending.current = Math.max(0, pending.current - 1);
+        });
+    },
+    [apply, persist, userId, ensureTaskDetails],
   );
 
   // One-time column migration: «На проверке» → «Готов к тестированию» + new «На проверке».
@@ -671,12 +988,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         sprint: input.sprint ?? "",
         watchers: input.watchers ?? [],
         custom: input.custom ?? {},
+        detailsLoaded: true, // создали сами — описание уже на руках
+        commentCount: 0,
       };
       apply({ ...dataRef.current, tasks: [...dataRef.current.tasks, task] });
+      rememberDetails(task.id);
       if (userId) persist(db.insertTask(task, userId));
       return task;
     },
-    [apply, persist, userId, userEmail]
+    [apply, persist, userId, userEmail, rememberDetails]
   );
 
   const updateTask = useCallback(
@@ -807,28 +1127,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           (j) => !(j.taskId === removeReadyFor && j.stage === READY_COLUMN_NAME)
         );
       }
-      let logged: JournalEntry | null = null;
-      if (changedColumn) {
-        // «Готово» не создаёт новую запись — только гарантирует запись разработчика
-        const res =
-          action === "done"
-            ? ensureDevRecord(journal, finalMoving, board)
-            : appendLog(journal, finalMoving, board, action);
-        journal = res.journal;
-        logged = res.entry;
-      }
-
       apply({ ...d, tasks, journal });
 
       if (userId) {
         const affected = tasks.filter((t) => newOrder.has(t.id));
         persist(db.upsertTasks(affected, userId));
-        if (logged) persist(db.insertJournal(logged, userId));
         if (removeDoneFor) persist(db.deleteJournalByTask(removeDoneFor));
         if (removeReadyFor) persist(db.deleteJournalByTask(removeReadyFor));
       }
+      // «Готово» не создаёт новую запись — только гарантирует запись разработчика
+      if (changedColumn && (action === "done" || action === "review")) {
+        logStage(finalMoving, board, action === "done" ? "ensureDev" : "review");
+      }
     },
-    [apply, persist, userId]
+    [apply, persist, userId, logStage]
   );
 
   // Безопасный перенос карточки в другую доску. Сохраняет всё содержимое
@@ -915,15 +1227,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       const tasks = d.tasks.map((t) => (t.id === id ? updatedTask : t));
 
-      let journal = d.journal;
-      let journalEntry: JournalEntry | null = null;
-      if (becomingDone) {
-        const res = ensureDevRecord(d.journal, updatedTask, board);
-        journal = res.journal;
-        journalEntry = res.entry;
-      } else {
-        journal = d.journal.filter((j) => j.taskId !== id);
-      }
+      const journal = becomingDone ? d.journal : d.journal.filter((j) => j.taskId !== id);
 
       apply({ ...d, tasks, journal });
 
@@ -939,12 +1243,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           photos: updatedTask.photos,
         })
       );
-      if (userId) {
-        if (becomingDone && journalEntry) persist(db.insertJournal(journalEntry, userId));
-        if (!becomingDone) persist(db.deleteJournalByTask(id));
-      }
+      if (userId && !becomingDone) persist(db.deleteJournalByTask(id));
+      if (becomingDone) logStage(updatedTask, board, "ensureDev");
     },
-    [apply, persist, userId]
+    [apply, persist, userId, logStage]
   );
 
   // ---------------- Team workflow ----------------
@@ -959,7 +1261,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         kind,
         createdAt: new Date().toISOString(),
       };
-      apply({ ...dataRef.current, comments: [...dataRef.current.comments, c] });
+      const d = dataRef.current;
+      apply({
+        ...d,
+        comments: [...d.comments, c],
+        tasks: d.tasks.map((t) => (t.id === taskId ? { ...t, commentCount: (t.commentCount ?? 0) + 1 } : t)),
+      });
       if (userId) persist(db.insertComment(c, userId));
     },
     [apply, persist, userId]
@@ -967,9 +1274,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const deleteComment = useCallback(
     (id: string) => {
+      const d = dataRef.current;
+      const gone = d.comments.find((c) => c.id === id);
       apply({
-        ...dataRef.current,
-        comments: dataRef.current.comments.filter((c) => c.id !== id),
+        ...d,
+        comments: d.comments.filter((c) => c.id !== id),
+        tasks: gone
+          ? d.tasks.map((t) =>
+              t.id === gone.taskId ? { ...t, commentCount: Math.max(0, (t.commentCount ?? 1) - 1) } : t,
+            )
+          : d.tasks,
       });
       persist(db.deleteCommentRow(id));
     },
@@ -1065,9 +1379,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const updated = { ...task, ...patch };
 
       // if it was done, clear its done journal entries; then log the review action
-      const baseJournal =
-        task.status === "done" ? d.journal.filter((j) => j.taskId !== id) : d.journal;
-      const { journal, entry } = appendLog(baseJournal, updated, board, "review");
+      const journal = task.status === "done" ? d.journal.filter((j) => j.taskId !== id) : d.journal;
 
       apply({
         ...d,
@@ -1076,9 +1388,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
       persist(db.updateTaskRow(id, patch));
       if (task.status === "done") persist(db.deleteJournalByTask(id));
-      if (userId && entry) persist(db.insertJournal(entry, userId));
+      logStage(updated, board, "review");
     },
-    [apply, persist, userId]
+    [apply, persist, logStage]
   );
 
   const acceptTask = useCallback(
@@ -1102,17 +1414,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
       const updated = { ...task, ...patch };
 
-      const { journal, entry } = ensureDevRecord(d.journal, updated, board);
-
       apply({
         ...d,
         tasks: d.tasks.map((t) => (t.id === id ? updated : t)),
-        journal,
       });
       persist(db.updateTaskRow(id, patch));
-      if (userId && entry) persist(db.insertJournal(entry, userId));
+      logStage(updated, board, "ensureDev");
     },
-    [apply, persist, userId]
+    [apply, persist, logStage]
   );
 
   const returnTask = useCallback(
@@ -1158,26 +1467,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         createdAt: nowIso,
       };
 
-      // returning to work — drop its «Готово»/«Готов к тестированию» entries,
-      // then log the return action (with reason as note)
-      const hadLogged = d.journal.some(
-        (j) => j.taskId === id && (j.stage === "Готово" || j.stage === READY_COLUMN_NAME)
-      );
-      const baseJournal = d.journal.filter(
+      // returning to work — drop its «Готово»/«Готов к тестированию» entries.
+      // Журнал может быть не загружен — тогда проверить нечего, чистим в базе всегда.
+      const hadLogged =
+        journalScopeRef.current === "none" ||
+        d.journal.some((j) => j.taskId === id && (j.stage === "Готово" || j.stage === READY_COLUMN_NAME));
+      const journal = d.journal.filter(
         (j) => !(j.taskId === id && (j.stage === "Готово" || j.stage === READY_COLUMN_NAME))
       );
-      const { journal, entry } = appendLog(baseJournal, updated, board, "returned", reason.trim());
+      const withComment = reason.trim().length > 0;
+      const updatedWithCount = withComment ? { ...updated, commentCount: (updated.commentCount ?? 0) + 1 } : updated;
 
       apply({
         ...d,
-        tasks: d.tasks.map((t) => (t.id === id ? updated : t)),
-        comments: reason.trim() ? [...d.comments, comment] : d.comments,
+        tasks: d.tasks.map((t) => (t.id === id ? updatedWithCount : t)),
+        comments: withComment ? [...d.comments, comment] : d.comments,
         journal,
       });
       persist(db.updateTaskRow(id, patch));
-      if (userId && reason.trim()) persist(db.insertComment(comment, userId));
+      if (userId && withComment) persist(db.insertComment(comment, userId));
       if (hadLogged) persist(db.deleteJournalByTask(id));
-      if (userId && entry) persist(db.insertJournal(entry, userId));
     },
     [apply, persist, userId]
   );
@@ -1386,11 +1695,39 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [refetch]
   );
 
+  // Счётчики по доскам: для загруженных досок считаем из памяти (мгновенно
+  // отражают правки), для остальных — то, что посчитала база.
+  const boardStats = useMemo(() => {
+    const today = todayISO();
+    const out: Record<string, BoardStats> = { ...serverStats };
+    const hasAll = loadedScopes.includes("all");
+    for (const b of data.boards) {
+      if (!hasAll && !loadedScopes.includes(`board:${b.id}`)) continue;
+      const bt = data.tasks.filter((t) => t.boardId === b.id);
+      const done = bt.filter((t) => t.status === "done").length;
+      out[b.id] = {
+        total: bt.length,
+        done,
+        active: bt.length - done,
+        overdue: bt.filter((t) => isTaskOverdue(t, today)).length,
+      };
+    }
+    return out;
+  }, [serverStats, loadedScopes, data.boards, data.tasks]);
+
   const value = useMemo<StoreContextValue>(
     () => ({
       ...data,
       ready,
       syncing,
+      boardStats,
+      ensureTasks,
+      isScopeLoaded,
+      isScopeLoading,
+      journalScope,
+      ensureJournal,
+      ensureTaskDetails,
+      dataVersion,
       createBoard,
       updateBoard,
       deleteBoard,
@@ -1435,6 +1772,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [
       data,
       ready,
+      syncing,
+      boardStats,
+      ensureTasks,
+      isScopeLoaded,
+      isScopeLoading,
+      journalScope,
+      ensureJournal,
+      ensureTaskDetails,
+      dataVersion,
       createBoard,
       updateBoard,
       deleteBoard,

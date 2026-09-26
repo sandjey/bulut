@@ -55,7 +55,13 @@ export default function JournalPage() {
 }
 
 function JournalPageInner() {
-  const { journal, boards, tasks, addJournalEntry, updateJournalEntry, deleteJournalEntry } = useStore();
+  const { journal, boards, tasks, addJournalEntry, updateJournalEntry, deleteJournalEntry, ensureTasks, ensureJournal } =
+    useStore();
+  // Журнал с заметками + сводки всех задач (время по этапам, статусы).
+  useEffect(() => {
+    void ensureJournal(true);
+    void ensureTasks({ kind: "all" });
+  }, [ensureJournal, ensureTasks]);
   const can = useCan();
   const canEdit = can("journal.edit");
   const canDelete = can("journal.delete");

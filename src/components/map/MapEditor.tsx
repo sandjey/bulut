@@ -122,7 +122,15 @@ export function MapEditor({ map }: { map: ProjectMap }) {
 
 function EditorInner({ map }: { map: ProjectMap }) {
   const { renameMap, setMapColor, saveGraph } = useMaps();
-  const { tasks: mapTasks, boards: mapBoards } = useStore();
+  const { tasks: mapTasks, boards: mapBoards, ensureTasks } = useStore();
+  // Задачи, привязанные к карте, плюс те, на которые ссылаются узлы-ссылки.
+  useEffect(() => {
+    void ensureTasks({ kind: "map", mapId: map.id });
+    const linked = (map.graph.nodes ?? [])
+      .map((n) => (n.data as { link?: { taskId?: string } } | undefined)?.link?.taskId)
+      .filter((id): id is string => !!id);
+    if (linked.length) void ensureTasks({ kind: "ids", ids: linked });
+  }, [map.id, map.graph.nodes, ensureTasks]);
   // Один индекс статусов на всю карту (а не пересчёт для каждого узла) — плавность на слабых ПК.
   const statsIndex = useMemo(() => buildStatsIndex(mapTasks, mapBoards, map.id), [mapTasks, mapBoards, map.id]);
   const canEdit = useCan()("map.edit");
@@ -1083,8 +1091,11 @@ function NodeTasksPanel({
 }
 
 function LinkPicker({ data, onChange }: { data: MapNode["data"]; onChange: (p: Partial<MapNode["data"]>) => void }) {
-  const { boards, tasks } = useStore();
+  const { boards, tasks, ensureTasks } = useStore();
   const link = data.link ?? {};
+  useEffect(() => {
+    if (link.boardId) void ensureTasks({ kind: "board", boardId: link.boardId });
+  }, [link.boardId, ensureTasks]);
   const boardTasks = link.boardId ? tasks.filter((t) => t.boardId === link.boardId) : [];
   return (
     <div className="mt-3 rounded-lg border border-teal-500/30 bg-teal-500/[0.06] p-2.5">

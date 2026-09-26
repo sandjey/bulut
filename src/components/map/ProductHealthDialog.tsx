@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ExternalLink } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -23,7 +23,10 @@ export function ProductHealthDialog({
   mapId: string;
   nodes: MapNode[];
 }) {
-  const { tasks, boards, createTask } = useStore();
+  const { tasks, boards, createTask, ensureTasks } = useStore();
+  useEffect(() => {
+    void ensureTasks({ kind: "map", mapId });
+  }, [mapId, ensureTasks]);
   const router = useRouter();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [board, setBoard] = useState(boards[0]?.id ?? "");

@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import { useMe } from "@/lib/me";
 import { useWorkspace } from "@/lib/workspace";
 import { buildNotifications, Notif, NotifType } from "@/lib/notifications";
+import * as db from "@/lib/db";
 import { fmtDate } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
@@ -20,9 +21,27 @@ const META: Record<NotifType, { icon: typeof Bell; color: string; label: string 
 const READ_KEY = "bulut.notifReadAt";
 
 export function NotificationsBell() {
-  const store = useStore();
+  const { tasks, ensureTasks, dataVersion } = useStore();
   const [me] = useMe();
-  const { pendingInvites, notifications, unread: wsUnread, acceptInvite, markAllRead } = useWorkspace();
+  const { activeId, pendingInvites, notifications, unread: wsUnread, acceptInvite, markAllRead } = useWorkspace();
+  // Мои активные задачи (сроки) — небольшой набор; возвраты и упоминания ищет база.
+  const [feed, setFeed] = useState<db.FeedComment[]>([]);
+  useEffect(() => {
+    if (!me || !activeId) {
+      setFeed([]);
+      return;
+    }
+    let cancelled = false;
+    void ensureTasks({ kind: "mine", me });
+    db.fetchNotificationFeed(me)
+      .then((f) => {
+        if (!cancelled) setFeed(f);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [me, activeId, dataVersion, ensureTasks]);
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [readAt, setReadAt] = useState("");
@@ -38,10 +57,7 @@ export function NotificationsBell() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const notifs = useMemo(
-    () => buildNotifications({ boards: store.boards, tasks: store.tasks, journal: store.journal, comments: store.comments, members: store.members }, me),
-    [store.boards, store.tasks, store.journal, store.comments, store.members, me]
-  );
+  const notifs = useMemo(() => buildNotifications({ tasks, feed }, me), [tasks, feed, me]);
 
   const derivedUnread = notifs.filter((n) => n.at > readAt).length;
   const unread = derivedUnread + wsUnread;

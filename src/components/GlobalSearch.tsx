@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search, KanbanSquare, CheckCircle2, Circle } from "lucide-react";
 import { Modal } from "./Modal";
@@ -8,9 +8,13 @@ import { useStore } from "@/lib/store";
 import { PriorityDot } from "./PriorityDot";
 
 export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { boards, tasks } = useStore();
+  const { boards, tasks, ensureTasks } = useStore();
   const router = useRouter();
   const [q, setQ] = useState("");
+  // Сводки всех задач подтягиваем при открытии поиска (описания в сводке нет).
+  useEffect(() => {
+    if (open) void ensureTasks({ kind: "all" });
+  }, [open, ensureTasks]);
 
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -18,7 +22,7 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
     const matchedBoards = boards.filter((b) => b.name.toLowerCase().includes(term));
     const matchedTasks = tasks
       .filter((t) => {
-        const hay = `${t.title} ${t.desc} ${t.assignee} ${t.tags.join(" ")}`.toLowerCase();
+        const hay = `${t.title} ${t.assignee} ${t.tags.join(" ")}`.toLowerCase();
         return hay.includes(term);
       })
       .slice(0, 30);

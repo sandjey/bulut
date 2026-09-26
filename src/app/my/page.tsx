@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { UserCircle2, AlarmClock, CalendarClock, CalendarDays, Inbox, CheckCircle2 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -24,8 +24,12 @@ export default function MyTasksPage() {
 }
 
 function MyTasksPageInner() {
-  const { tasks, boards } = useStore();
+  const { tasks, boards, ensureTasks } = useStore();
   const [me] = useMe(); // личность из аккаунта (задаётся автоматически)
+  // Только мои активные задачи — не вся комната.
+  useEffect(() => {
+    if (me) void ensureTasks({ kind: "mine", me });
+  }, [me, ensureTasks]);
 
   const groups = useMemo(() => {
     const today = todayISO();

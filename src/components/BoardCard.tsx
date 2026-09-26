@@ -3,24 +3,21 @@
 import Link from "next/link";
 import { useState } from "react";
 import { CheckCircle2, Clock, AlertTriangle, MoreVertical, Trash2, Pencil } from "lucide-react";
-import { Board, Task } from "@/lib/types";
-import { useStore } from "@/lib/store";
+import { Board } from "@/lib/types";
+import { useStore, type BoardStats } from "@/lib/store";
 import { withAlpha } from "@/lib/utils";
-import { todayISO } from "@/lib/date";
-import { isTaskOverdue } from "@/lib/deadlines";
 
-export function BoardCard({ board, tasks }: { board: Board; tasks: Task[] }) {
+export function BoardCard({ board, stats }: { board: Board; stats?: BoardStats }) {
   const { deleteBoard, updateBoard } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(board.name);
 
-  const bt = tasks.filter((t) => t.boardId === board.id);
-  const done = bt.filter((t) => t.status === "done").length;
-  const total = bt.length;
-  const today = todayISO();
-  const overdue = bt.filter((t) => isTaskOverdue(t, today)).length;
-  const active = total - done;
+  // Счётчики приходят готовыми (RPC board_task_stats) — задачи доски не качаем.
+  const done = stats?.done ?? 0;
+  const total = stats?.total ?? 0;
+  const overdue = stats?.overdue ?? 0;
+  const active = stats?.active ?? 0;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   const commitName = () => {

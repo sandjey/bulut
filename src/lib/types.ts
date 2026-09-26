@@ -90,6 +90,10 @@ export interface Task {
   watchers: string[]; // наблюдатели (имена) — получают уведомления
   custom: Record<string, string>; // значения кастомных полей доски
   deletedAt?: string | null; // ISO — в Корзине, если задано
+  // С сервера обычно приходит только сводка (без desc/custom/photos): они
+  // грузятся при открытии карточки. false/undefined = «в памяти лишь сводка».
+  detailsLoaded?: boolean;
+  commentCount?: number; // сколько комментариев — для значка, без самих текстов
 }
 
 /** Одно событие возврата карточки на доработку. */

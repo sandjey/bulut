@@ -38,7 +38,9 @@ interface TaskRow {
   board_id: string;
   column_id: string;
   title: string;
-  description: string;
+  // description/custom приходят только с деталями карточки (fetchTaskDetails);
+  // в сводке их нет — undefined означает «ещё не загружали».
+  description?: string;
   assignee: string;
   priority: Priority;
   type: TaskType;
@@ -70,7 +72,7 @@ interface TaskRow {
   epic: string | null;
   sprint: string | null;
   watchers: string[] | null;
-  custom: Record<string, string> | null;
+  custom?: Record<string, string> | null;
   deleted_at: string | null;
 }
 
@@ -149,6 +151,7 @@ const toTask = (r: TaskRow): Task => ({
   watchers: r.watchers ?? [],
   custom: r.custom ?? {},
   deletedAt: r.deleted_at ?? null,
+  detailsLoaded: r.description !== undefined,
 });
 
 const toComment = (r: CommentRow): TaskComment => ({
@@ -195,30 +198,15 @@ function wsId(): string {
 }
 
 // ---------- Bulk load ----------
+//
+// Данные грузятся слоями, а не всей комнатой сразу:
+//   1. ядро      — доски + статистика по доскам (RPC, 10 строк);
+//   2. сводки    — задачи выбранного набора (доска / мои / карта / все) без
+//                  описания, кастомных полей и фото;
+//   3. детали    — описание, кастомные поля и комментарии одной карточки,
+//                  когда её открыли; фото — отдельно (fetchTaskPhotos).
+// Журнал тоже отдельным слоем и по умолчанию без заметок (в них ~85% веса).
 
-/**
- * Колонки задачи, которые тянем при обычной загрузке — ВСЕ, кроме `photos`.
- *
- * `photos` хранит фото в base64 прямо в строке. Раньше здесь стояла `select("*")`,
- * и опрос раз в 25 секунд качал все фото комнаты заново — это давало десятки
- * гигабайт egress в день. Теперь фото приходят только по требованию
- * (fetchTaskPhotos), когда пользователь открыл карточку.
- */
-const TASK_COLUMNS_BASE =
-  "id,user_id,board_id,column_id,title,description,assignee,priority,type,due_date," +
-  "done_due_date,tags,status,position,created_at,created_by,ready_at,tested_at,completed_at," +
-  "stage_entered_at,return_count,returns,stage_times,checklist,attachments,map_id,map_node_id," +
-  "parent_id,blocked_by,story_points,epic,sprint,watchers,custom,deleted_at";
-
-// photo_count появляется только после миграции 20240131. Пока её нет — работаем
-// без счётчика (значок «фото» на карточке просто не показывается).
-let hasPhotoCount = true;
-const taskColumns = () => (hasPhotoCount ? `${TASK_COLUMNS_BASE},photo_count` : TASK_COLUMNS_BASE);
-
-const isMissingColumn = (e: { code?: string; message?: string } | null): boolean =>
-  !!e && (e.code === "42703" || e.code === "PGRST204" || /photo_count/i.test(e.message ?? ""));
-
-/** Задачи комнаты без колонки photos. Сам откатывается, если миграции ещё нет. */
 /**
  * Supabase (PostgREST) отдаёт не больше 1000 строк за запрос.
  * Комната «sarbon» уже перешагнула этот порог по комментариям — всё, что после
@@ -241,19 +229,306 @@ async function fetchAllPages<T>(
   return { data: all, error: null };
 }
 
-async function selectTasksSlim(ws: string, orderBy: "position" | "created_at") {
-  const ascending = orderBy === "position";
-  const run = (cols: string) =>
-    fetchAllPages<TaskRow>(() =>
-      client().from("tasks").select(cols).eq("workspace_id", ws).order(orderBy, { ascending }),
-    );
+/** Разбить список id на пачки — иначе URL с `in(...)` упирается в лимит длины. */
+const chunk = <T,>(arr: T[], size = 80): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
 
-  let res = await run(taskColumns());
+/**
+ * Сводка задачи — всё, что нужно карточке на доске, спискам, отчётам и
+ * логике этапов. Без `description`, `custom` и `photos`: они тяжёлые и
+ * нужны только внутри открытой карточки.
+ */
+const TASK_SUMMARY_COLUMNS =
+  "id,board_id,column_id,title,assignee,priority,type,due_date,done_due_date,tags,status," +
+  "position,created_at,created_by,ready_at,tested_at,completed_at,stage_entered_at,return_count," +
+  "returns,stage_times,checklist,attachments,map_id,map_node_id,parent_id,blocked_by,story_points," +
+  "epic,sprint,watchers,deleted_at";
+const TASK_DETAIL_COLUMNS = "id,description,custom";
+
+// photo_count появляется только после миграции 20240131. Пока её нет — работаем
+// без счётчика (значок «фото» на карточке просто не показывается).
+let hasPhotoCount = true;
+const summaryColumns = () =>
+  hasPhotoCount ? `${TASK_SUMMARY_COLUMNS},photo_count` : TASK_SUMMARY_COLUMNS;
+
+const isMissingColumn = (e: { code?: string; message?: string } | null): boolean =>
+  !!e && (e.code === "42703" || e.code === "PGRST204" || /photo_count/i.test(e.message ?? ""));
+
+/** Какой набор задач нужен странице. */
+export type TaskScope =
+  | { kind: "all" }
+  | { kind: "board"; boardId: string }
+  | { kind: "mine"; me: string } // мои активные задачи (assignee = я, не «Готово»)
+  | { kind: "map"; mapId: string }
+  | { kind: "ids"; ids: string[] };
+
+export function scopeKey(s: TaskScope): string {
+  switch (s.kind) {
+    case "all":
+      return "all";
+    case "board":
+      return `board:${s.boardId}`;
+    case "mine":
+      return `mine:${s.me}`;
+    case "map":
+      return `map:${s.mapId}`;
+    case "ids":
+      return `ids:${[...s.ids].sort().join(",")}`;
+  }
+}
+
+/** Входит ли задача в набор (по данным, которые есть у нас на руках). */
+export function taskInScope(t: Task, s: TaskScope): boolean {
+  switch (s.kind) {
+    case "all":
+      return true;
+    case "board":
+      return t.boardId === s.boardId;
+    case "mine":
+      return t.assignee === s.me && t.status !== "done";
+    case "map":
+      return t.mapId === s.mapId;
+    case "ids":
+      return s.ids.includes(t.id);
+  }
+}
+
+type TaskQuery = ReturnType<ReturnType<typeof client>["from"]>;
+function applyScope(q: TaskQuery, cols: string, ws: string, s: TaskScope) {
+  let f = q.select(cols).eq("workspace_id", ws).is("deleted_at", null);
+  switch (s.kind) {
+    case "board":
+      f = f.eq("board_id", s.boardId);
+      break;
+    case "mine":
+      f = f.eq("assignee", s.me).neq("status", "done");
+      break;
+    case "map":
+      f = f.eq("map_id", s.mapId);
+      break;
+    case "ids":
+      f = f.in("id", s.ids);
+      break;
+  }
+  // второй ключ сортировки нужен, чтобы страницы не перекрывались
+  return f.order("position", { ascending: true }).order("id", { ascending: true });
+}
+
+/** Сводки задач набора (без описания/фото). Сам откатывается, если миграции photo_count нет. */
+export async function fetchTaskSummaries(scope: TaskScope): Promise<Task[]> {
+  const ws = wsId();
+  if (scope.kind === "ids" && scope.ids.length === 0) return [];
+  const run = async (cols: string) => {
+    if (scope.kind === "ids") {
+      const all: TaskRow[] = [];
+      for (const part of chunk(scope.ids)) {
+        const res = await fetchAllPages<TaskRow>(() => applyScope(client().from("tasks"), cols, ws, { kind: "ids", ids: part }));
+        if (res.error) return res;
+        all.push(...(res.data ?? []));
+      }
+      return { data: all, error: null as PageError };
+    }
+    return fetchAllPages<TaskRow>(() => applyScope(client().from("tasks"), cols, ws, scope));
+  };
+  let res = await run(summaryColumns());
   if (res.error && hasPhotoCount && isMissingColumn(res.error)) {
     hasPhotoCount = false; // миграция ещё не применена — пробуем без photo_count
-    res = await run(taskColumns());
+    res = await run(summaryColumns());
   }
-  return { data: res.data, error: res.error };
+  if (res.error) throw res.error;
+  return (res.data ?? []).map(toTask);
+}
+
+/** Детали карточек: описание и кастомные поля. Грузим, когда карточку открыли. */
+export async function fetchTaskDetails(
+  ids: string[],
+): Promise<{ id: string; desc: string; custom: Record<string, string> }[]> {
+  const out: { id: string; desc: string; custom: Record<string, string> }[] = [];
+  for (const part of chunk(ids)) {
+    const { data, error } = await client().from("tasks").select(TASK_DETAIL_COLUMNS).in("id", part);
+    if (error) throw error;
+    for (const r of (data ?? []) as Pick<TaskRow, "id" | "description" | "custom">[]) {
+      out.push({ id: r.id, desc: r.description ?? "", custom: r.custom ?? {} });
+    }
+  }
+  return out;
+}
+
+/** Комментарии выбранных задач (все, постранично). */
+export async function fetchCommentsFor(taskIds: string[]): Promise<TaskComment[]> {
+  const out: TaskComment[] = [];
+  for (const part of chunk(taskIds)) {
+    const res = await fetchAllPages<CommentRow>(() =>
+      client()
+        .from("task_comments")
+        .select("*")
+        .in("task_id", part)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
+    );
+    if (res.error) throw res.error;
+    out.push(...(res.data ?? []).map(toComment));
+  }
+  return out;
+}
+
+/**
+ * Сколько комментариев у каждой задачи доски — для значка на карточке, без
+ * самих текстов. Один запрос через join; если join недоступен — по id пачками.
+ */
+export async function fetchCommentCounts(boardId: string, taskIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const bump = (rows: { task_id: string }[]) => {
+    for (const r of rows) counts.set(r.task_id, (counts.get(r.task_id) ?? 0) + 1);
+  };
+  const joined = await fetchAllPages<{ task_id: string }>(() =>
+    client()
+      .from("task_comments")
+      .select("task_id,tasks!inner(id)")
+      .eq("tasks.board_id", boardId)
+      .order("id", { ascending: true }),
+  );
+  if (!joined.error) {
+    bump(joined.data ?? []);
+    return counts;
+  }
+  for (const part of chunk(taskIds)) {
+    const res = await fetchAllPages<{ task_id: string }>(() =>
+      client().from("task_comments").select("task_id").in("task_id", part).order("id", { ascending: true }),
+    );
+    if (res.error) throw res.error;
+    bump(res.data ?? []);
+  }
+  return counts;
+}
+
+/** Живые доски комнаты. */
+export async function fetchBoards(): Promise<Board[]> {
+  const res = await fetchAllPages<BoardRow>(() =>
+    client()
+      .from("boards")
+      .select("*")
+      .eq("workspace_id", wsId())
+      .is("deleted_at", null)
+      .order("position", { ascending: true })
+      .order("id", { ascending: true }),
+  );
+  if (res.error) throw res.error;
+  return (res.data ?? []).map(toBoard);
+}
+
+export interface BoardStats {
+  total: number;
+  done: number;
+  active: number;
+  overdue: number;
+}
+
+/**
+ * Счётчики по доскам для главной: всего / готово / просрочено. Считает база
+ * (RPC board_task_stats, миграция 20240133). Если RPC ещё нет — тянем
+ * минимальную проекцию задач и считаем сами.
+ */
+export async function fetchBoardStats(today: string): Promise<Record<string, BoardStats>> {
+  const ws = wsId();
+  const out: Record<string, BoardStats> = {};
+  const rpc = await client().rpc("board_task_stats", { p_ws: ws, p_today: today });
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    for (const r of rpc.data as { board_id: string; total: number; done: number; overdue: number }[]) {
+      out[r.board_id] = { total: r.total, done: r.done, active: r.total - r.done, overdue: r.overdue };
+    }
+    return out;
+  }
+  type Lite = Pick<TaskRow, "board_id" | "status" | "ready_at" | "due_date" | "done_due_date">;
+  const res = await fetchAllPages<Lite>(() =>
+    client()
+      .from("tasks")
+      .select("board_id,status,ready_at,due_date,done_due_date")
+      .eq("workspace_id", ws)
+      .is("deleted_at", null)
+      .order("id", { ascending: true }),
+  );
+  if (res.error) throw res.error;
+  for (const t of res.data ?? []) {
+    const s = (out[t.board_id] ??= { total: 0, done: 0, active: 0, overdue: 0 });
+    s.total++;
+    if (t.status === "done") s.done++;
+    else {
+      s.active++;
+      const devLate = !t.ready_at && !!t.due_date && t.due_date < today;
+      const doneLate = !!t.done_due_date && t.done_due_date < today;
+      if (devLate || doneLate) s.overdue++;
+    }
+  }
+  return out;
+}
+
+const JOURNAL_SLIM_COLUMNS =
+  "id,user_id,task_id,date,board_name,task_title,assignee,stage,type,created_at,deleted_at";
+
+/** Журнал комнаты. `full` — с заметками (нужны только на странице журнала и в экспорте). */
+export async function fetchJournal(full: boolean): Promise<JournalEntry[]> {
+  const res = await fetchAllPages<JournalRow>(() =>
+    client()
+      .from("journal")
+      .select(full ? "*" : JOURNAL_SLIM_COLUMNS)
+      .eq("workspace_id", wsId())
+      .is("deleted_at", null)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true }),
+  );
+  if (res.error) throw res.error;
+  return (res.data ?? []).map(toJournal);
+}
+
+/** Комментарий с привязанной задачей — для ленты уведомлений. */
+export interface FeedComment extends TaskComment {
+  task: { id: string; title: string; boardId: string; assignee: string };
+}
+
+/**
+ * Лента для колокольчика: возвраты по моим задачам и упоминания меня —
+ * ищет база, клиенту не нужны все комментарии комнаты.
+ */
+export async function fetchNotificationFeed(me: string): Promise<FeedComment[]> {
+  if (!activeWs || !me) return [];
+  type Row = CommentRow & {
+    tasks: { id: string; title: string; board_id: string; assignee: string; deleted_at: string | null } | null;
+  };
+  const cols = "*,tasks!inner(id,title,board_id,assignee,deleted_at)";
+  const base = () =>
+    client()
+      .from("task_comments")
+      .select(cols)
+      .eq("workspace_id", activeWs!)
+      .is("tasks.deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(40);
+  const safe = me.replace(/[%_]/g, "");
+  const [returns, mentions] = await Promise.all([
+    base().eq("kind", "return").eq("tasks.assignee", me),
+    base().ilike("text", `%@${safe}%`),
+  ]);
+  const rows: Row[] = [];
+  for (const r of [returns, mentions]) {
+    if (r.error) continue; // нет join/индекса — просто без этой части ленты
+    rows.push(...((r.data ?? []) as unknown as Row[]));
+  }
+  const seen = new Set<string>();
+  const out: FeedComment[] = [];
+  for (const r of rows) {
+    if (!r.tasks || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push({
+      ...toComment(r),
+      task: { id: r.tasks.id, title: r.tasks.title, boardId: r.tasks.board_id, assignee: r.tasks.assignee ?? "" },
+    });
+  }
+  return out;
 }
 
 /**
@@ -266,14 +541,7 @@ export async function fetchTaskPhotos(taskId: string): Promise<import("./types")
   return ((data?.photos as import("./types").TaskPhoto[] | null) ?? []);
 }
 
-/**
- * Короткая «метка синхронизации» комнаты (~200 байт): меняется при любой
- * вставке, правке или удалении. Опрос сначала спрашивает её и качает данные,
- * только если метка изменилась.
- *
- * null = метки нет (миграция 20240131 не применена) → зовущий делает полную
- * загрузку, как раньше.
- */
+/** Короткая метка «что-нибудь изменилось?» — см. миграцию 20240131. */
 export async function fetchSyncStamp(): Promise<string | null> {
   if (!activeWs) return null;
   const { data, error } = await client().rpc("workspace_sync_stamp", { p_ws: activeWs });
@@ -289,71 +557,56 @@ export async function fetchMapsSyncStamp(): Promise<string | null> {
   return data;
 }
 
-export async function fetchAll(userId: string): Promise<AppData> {
-  const c = client();
-  // Нет активной комнаты — нет данных (пусто, без падений).
-  if (!activeWs) return { boards: [], tasks: [], journal: [], comments: [], members: [] };
-  const ws = activeWs;
-  const [boardsRes, tasksRes, journalRes, commentsRes] = await Promise.all([
-    fetchAllPages<BoardRow>(() =>
-      c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
-    ),
-    selectTasksSlim(ws, "position"),
-    fetchAllPages<JournalRow>(() =>
-      c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
-    ),
-    fetchAllPages<CommentRow>(() =>
-      c
-        .from("task_comments")
-        .select("*")
-        .eq("workspace_id", ws)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true }),
-    ),
-  ]);
-  if (boardsRes.error) throw boardsRes.error;
-  if (tasksRes.error) throw tasksRes.error;
-  if (journalRes.error) throw journalRes.error;
-  // task_comments may be missing before its migration — degrade gracefully
-  const comments = commentsRes.error ? [] : (commentsRes.data as CommentRow[]).map(toComment);
-  // «members» (старая таблица команды) удалена — команда теперь = участники комнаты
-  const members: Member[] = [];
-
-  // Фильтруем удалённые в JS (а не в SQL) — чтобы код не падал, если миграция
-  // с deleted_at ещё не применена: тогда deletedAt = null и всё видно.
-  const notDeleted = <T extends { deletedAt?: string | null }>(x: T) => !x.deletedAt;
-  return {
-    boards: (boardsRes.data as BoardRow[]).map(toBoard).filter(notDeleted),
-    tasks: (tasksRes.data as TaskRow[]).map(toTask).filter(notDeleted),
-    journal: (journalRes.data as JournalRow[]).map(toJournal).filter(notDeleted),
-    comments,
-    members,
-  };
-}
-
 /** Загрузка Корзины: удалённые доски/задачи/записи журнала. */
 export async function fetchTrash(): Promise<import("./types").TrashData> {
   const c = client();
   if (!activeWs) return { boards: [], tasks: [], journal: [] };
   const ws = activeWs;
-  const [boardsRes, tasksRes, journalRes] = await Promise.all([
+  const deleted = <T extends { deletedAt?: string | null }>(x: T) => !!x.deletedAt;
+  const tasksRun = (cols: string) =>
+    fetchAllPages<TaskRow>(() =>
+      c
+        .from("tasks")
+        .select(cols)
+        .eq("workspace_id", ws)
+        .not("deleted_at", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
+    );
+  const [boardsRes, tasksRes0, journalRes] = await Promise.all([
     fetchAllPages<BoardRow>(() =>
-      c.from("boards").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+      c
+        .from("boards")
+        .select("*")
+        .eq("workspace_id", ws)
+        .not("deleted_at", "is", null)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true }),
     ),
-    selectTasksSlim(ws, "created_at"),
+    tasksRun(summaryColumns()),
     fetchAllPages<JournalRow>(() =>
-      c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
+      c
+        .from("journal")
+        .select("*")
+        .eq("workspace_id", ws)
+        .not("deleted_at", "is", null)
+        .order("date", { ascending: false })
+        .order("id", { ascending: true }),
     ),
   ]);
+  let tasksRes = tasksRes0;
+  if (tasksRes.error && hasPhotoCount && isMissingColumn(tasksRes.error)) {
+    hasPhotoCount = false;
+    tasksRes = await tasksRun(summaryColumns());
+  }
   // если колонки deleted_at ещё нет — вернём пустую корзину, а не упадём
   if (boardsRes.error || tasksRes.error || journalRes.error) {
     return { boards: [], tasks: [], journal: [] };
   }
-  const deleted = <T extends { deletedAt?: string | null }>(x: T) => !!x.deletedAt;
   return {
-    boards: (boardsRes.data as BoardRow[]).map(toBoard).filter(deleted),
-    tasks: (tasksRes.data as TaskRow[]).map(toTask).filter(deleted),
-    journal: (journalRes.data as JournalRow[]).map(toJournal).filter(deleted),
+    boards: (boardsRes.data ?? []).map(toBoard).filter(deleted),
+    tasks: (tasksRes.data ?? []).map(toTask).filter(deleted),
+    journal: (journalRes.data ?? []).map(toJournal).filter(deleted),
   };
 }
 
@@ -442,7 +695,7 @@ export async function insertTask(t: Task, userId: string) {
   // Новая задача — единственная запись, где фото передаются целиком.
   const { error } = await client()
     .from("tasks")
-    .insert({ ...taskToRow(t, userId), photos: t.photos ?? [] });
+    .insert({ ...taskToRow(t, userId), description: t.desc, custom: t.custom ?? {}, photos: t.photos ?? [] });
   if (error) throw error;
 }
 
@@ -522,7 +775,9 @@ function taskToRow(t: Task, userId: string) {
     board_id: t.boardId,
     column_id: t.columnId,
     title: t.title,
-    description: t.desc,
+    // description и custom СПЕЦИАЛЬНО отсутствуют: в памяти обычно только
+    // сводка задачи (детали грузятся при открытии карточки), и upsert затёр бы
+    // описание пустой строкой. Они пишутся через insertTask и updateTaskRow.
     assignee: t.assignee,
     priority: t.priority,
     type: t.type,
@@ -553,7 +808,6 @@ function taskToRow(t: Task, userId: string) {
     epic: t.epic ?? "",
     sprint: t.sprint ?? "",
     watchers: t.watchers ?? [],
-    custom: t.custom ?? {},
   };
 }
 
@@ -594,6 +848,24 @@ export async function insertJournal(e: JournalEntry, userId: string) {
     created_at: e.createdAt,
   });
   if (error) throw error;
+}
+
+/**
+ * Вставить запись, только если у задачи ещё нет записи с таким этапом.
+ * Нужна, когда журнал не загружен в память и продублировать нельзя проверить локально.
+ */
+export async function insertJournalIfNoStage(e: JournalEntry, userId: string) {
+  if (e.taskId) {
+    const { count, error } = await client()
+      .from("journal")
+      .select("id", { count: "exact", head: true })
+      .eq("task_id", e.taskId)
+      .eq("stage", e.stage)
+      .is("deleted_at", null);
+    if (error) throw error;
+    if ((count ?? 0) > 0) return;
+  }
+  await insertJournal(e, userId);
 }
 
 export async function updateJournalRow(id: string, patch: Partial<JournalEntry>) {
@@ -801,33 +1073,6 @@ export async function softDeleteProjectMapRow(id: string) {
   if (error) throw error;
 }
 
-// ---------- Bulut API (Console): коллекции/окружения по пользователю ----------
-/** Загрузить сохранённое состояние консоли (коллекции, окружения). null — если нет/недоступно. */
-export async function fetchConsoleState(userId: string): Promise<unknown | null> {
-  try {
-    const { data, error } = await client()
-      .from("api_consoles")
-      .select("state")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) return null; // миграция не применена / нет доступа — не ломаем UI
-    return (data as { state?: unknown } | null)?.state ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** Сохранить состояние консоли (upsert по user_id). */
-export async function saveConsoleState(userId: string, state: unknown): Promise<void> {
-  const { error } = await client()
-    .from("api_consoles")
-    .upsert(
-      { user_id: userId, state, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" },
-    );
-  if (error) throw error;
-}
-
 /** Восстановление карты из Корзины. */
 export async function restoreProjectMapRow(id: string) {
   const { error } = await client().from("project_maps").update({ deleted_at: null }).eq("id", id);
@@ -844,9 +1089,12 @@ export async function fetchFullSnapshot(): Promise<Record<string, unknown[]>> {
   const out: Record<string, unknown[]> = {};
   await Promise.all(
     tables.map(async (t) => {
-      let q = c.from(t).select("*");
-      if (activeWs) q = q.eq("workspace_id", activeWs);
-      const { data, error } = await q;
+      // постранично: в комнате уже больше 1000 комментариев, а PostgREST режет по 1000
+      const { data, error } = await fetchAllPages<unknown>(() => {
+        let q = c.from(t).select("*");
+        if (activeWs) q = q.eq("workspace_id", activeWs);
+        return q.order("id", { ascending: true });
+      });
       out[t] = error ? [] : (data ?? []);
     }),
   );

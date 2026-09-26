@@ -49,7 +49,9 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging, edi
   const [draft, setDraft] = useState(task.title);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const taskComments = useMemo(() => comments.filter((c) => c.taskId === task.id), [comments, task.id]);
+  // Счётчик с сервера; если его нет (старая база) — считаем загруженные комментарии.
+  const loadedComments = useMemo(() => comments.filter((c) => c.taskId === task.id).length, [comments, task.id]);
+  const commentCount = task.commentCount ?? loadedComments;
   const returnCount = task.returnCount ?? 0;
   const hasReturn = returnCount > 0 && task.status !== "done";
   const checklist = task.checklist ?? [];
@@ -238,9 +240,9 @@ export function TaskCard({ task, board, onOpen, dragHandleProps, isDragging, edi
                 <ImageIcon className="h-3 w-3" /> {photoCount}
               </span>
             )}
-            {taskComments.length > 0 && (
+            {commentCount > 0 && (
               <span className="chip bg-surface-2 text-muted" title="Комментарии">
-                <MessageSquare className="h-3 w-3" /> {taskComments.length}
+                <MessageSquare className="h-3 w-3" /> {commentCount}
               </span>
             )}
             {!done && (

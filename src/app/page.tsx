@@ -10,7 +10,6 @@ import { CreateBoardDialog } from "@/components/CreateBoardDialog";
 import { RequirePerm } from "@/components/RequirePerm";
 import { StatWidget } from "@/components/StatWidget";
 import { todayISO, fmtDate } from "@/lib/date";
-import { isTaskOverdue } from "@/lib/deadlines";
 
 export default function HomePage() {
   return (
@@ -21,18 +20,24 @@ export default function HomePage() {
 }
 
 function HomePageInner() {
-  const { boards, tasks } = useStore();
+  const { boards, boardStats } = useStore();
   const { user } = useAuth();
   const canManage = useCan()("board.manage");
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Задачи на главную не грузим — только счётчики по доскам (их считает база).
   const stats = useMemo(() => {
-    const today = todayISO();
-    const done = tasks.filter((t) => t.status === "done").length;
-    const active = tasks.filter((t) => t.status !== "done").length;
-    const overdue = tasks.filter((t) => isTaskOverdue(t, today)).length;
-    return { done, active, overdue, total: tasks.length };
-  }, [tasks]);
+    const acc = { done: 0, active: 0, overdue: 0, total: 0 };
+    for (const b of boards) {
+      const s = boardStats[b.id];
+      if (!s) continue;
+      acc.done += s.done;
+      acc.active += s.active;
+      acc.overdue += s.overdue;
+      acc.total += s.total;
+    }
+    return acc;
+  }, [boards, boardStats]);
 
   const name = (user?.email ?? "").split("@")[0];
 
@@ -99,7 +104,7 @@ function HomePageInner() {
         ) : (
           <div className="stagger mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {boards.map((b) => (
-              <BoardCard key={b.id} board={b} tasks={tasks} />
+              <BoardCard key={b.id} board={b} stats={boardStats[b.id]} />
             ))}
             {canManage && (
               <button

@@ -299,7 +299,10 @@ export function TaskWorkflow({ taskId, board }: { taskId: string; board: Board }
 
         {/* list */}
         <div className="space-y-2">
-          {taskComments.length === 0 && (
+          {taskComments.length === 0 && !task.detailsLoaded && (
+            <p className="text-xs text-muted">Загружаем комментарии…</p>
+          )}
+          {taskComments.length === 0 && task.detailsLoaded && (
             <p className="text-sm text-muted">Пока нет комментариев</p>
           )}
           {taskComments.map((c) => (

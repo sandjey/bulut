@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Handle,
   Position,
@@ -522,12 +522,19 @@ function LinkNode({
   dim?: string;
   animClass?: string;
 }) {
-  const { boards, tasks } = useStore();
+  const { boards, tasks, ensureTasks, isScopeLoaded } = useStore();
   const router = useRouter();
   const link = data.link ?? {};
   const board = link.boardId ? boards.find((b) => b.id === link.boardId) : undefined;
   const task = link.taskId ? tasks.find((t) => t.id === link.taskId) : undefined;
-  const missing = (link.boardId && !board) || (link.taskId && !task);
+  // Задача ещё может просто не быть загружена — дотягиваем по id, а «нет такой»
+  // говорим только когда набор пришёл.
+  const idScope = useMemo(() => ({ kind: "ids" as const, ids: link.taskId ? [link.taskId] : [] }), [link.taskId]);
+  useEffect(() => {
+    if (link.taskId && !task) void ensureTasks(idScope);
+  }, [link.taskId, task, idScope, ensureTasks]);
+  const taskMissing = !!link.taskId && !task && isScopeLoaded(idScope);
+  const missing = (link.boardId && !board) || taskMissing;
   const title = task?.title || board?.name || data.label || "Ссылка";
   const subtitle = task ? board?.name : link.url || "Доска";
 

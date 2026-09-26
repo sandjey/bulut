@@ -117,7 +117,13 @@ interface TaskModalProps {
 }
 
 export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnly = false }: TaskModalProps) {
-  const { tasks, boards, createTask, updateTask, deleteTask, moveTaskToBoard } = useStore();
+  const { tasks, boards, createTask, updateTask, deleteTask, moveTaskToBoard, ensureTaskDetails } = useStore();
+  // Описание и кастомные поля грузятся при открытии карточки — до этого не даём сохранять,
+  // иначе пустое описание перезапишет настоящее.
+  const detailsReady = !task || !!task.detailsLoaded;
+  useEffect(() => {
+    if (open && task && !task.detailsLoaded) void ensureTaskDetails(task.id);
+  }, [open, task, ensureTaskDetails]);
   const notify = useNotifier();
   const can = useCan();
   const editing = !!task;
@@ -315,7 +321,11 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
       setWatchers([]);
       setCustom({});
     }
-  }, [open, task, defaultColumnId, board.columns]);
+    // Сбрасываем форму при открытии, смене карточки и приходе её деталей —
+    // но не на каждом обновлении объекта задачи (опрос сервера), иначе
+    // пропадёт то, что пользователь уже напечатал.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task?.id, task?.detailsLoaded, defaultColumnId, board.columns]);
 
   const save = () => {
     if (!title.trim()) return;
@@ -409,7 +419,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
               {canSave ? "Отмена" : "Закрыть"}
             </button>
             {canSave && (
-              <button className="btn-primary" onClick={save} disabled={!title.trim()}>
+              <button className="btn-primary" onClick={save} disabled={!title.trim() || !detailsReady}>
                 {editing ? "Сохранить" : "Создать"}
               </button>
             )}
@@ -465,7 +475,8 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
             className="input mt-2"
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
-            placeholder="Описание, детали, критерии готовности…"
+            placeholder={detailsReady ? "Описание, детали, критерии готовности…" : "Загружаем описание…"}
+            disabled={!detailsReady}
           />
         </div>
 
