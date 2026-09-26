@@ -758,15 +758,6 @@ export async function restoreTaskRow(id: string) {
   if (error) throw error;
 }
 
-/** Persist new column/order for a set of tasks (used by drag & drop). */
-export async function upsertTasks(tasks: Task[], userId: string) {
-  if (tasks.length === 0) return;
-  const { error } = await client()
-    .from("tasks")
-    .upsert(tasks.map((t) => taskToRow(t, userId)));
-  if (error) throw error;
-}
-
 function taskToRow(t: Task, userId: string) {
   return {
     id: t.id,
@@ -775,9 +766,9 @@ function taskToRow(t: Task, userId: string) {
     board_id: t.boardId,
     column_id: t.columnId,
     title: t.title,
-    // description и custom СПЕЦИАЛЬНО отсутствуют: в памяти обычно только
-    // сводка задачи (детали грузятся при открытии карточки), и upsert затёр бы
-    // описание пустой строкой. Они пишутся через insertTask и updateTaskRow.
+    // description и custom добавляет insertTask — сюда они не входят.
+    // Массовых upsert-ов больше нет: любая правка задачи идёт через
+    // updateTaskRow и пишет только изменённые поля, чтобы не затирать чужие.
     assignee: t.assignee,
     priority: t.priority,
     type: t.type,

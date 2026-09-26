@@ -691,7 +691,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Раньше здесь была realtime-подписка (websocket). Она держит активной
   // тяжёлую функцию realtime.list_changes() на стороне Postgres (10+ секунд
   // на вызов на тарифе Nano — см. Logs → Postgres) — платно чинится апгрейдом
-  // компьюта. Бесплатная альтернатива: обычный опрос раз в 25с + сразу при
+  // компьюта. Бесплатная альтернатива: обычный опрос раз в 12с + сразу при
   // возврате на вкладку. Без нагрузки на WAL, чуть медленнее видно чужие правки.
   //
   // Опрос устроен в два шага, иначе он съедает трафик: сначала спрашиваем
@@ -719,7 +719,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    const interval = setInterval(poll, 25000);
+    const interval = setInterval(poll, 12000);
     const onVisible = () => {
       if (document.visibilityState === "visible") poll();
     };
@@ -945,9 +945,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         tasks,
       });
       persist(db.updateBoardRow(boardId, { columns }));
-      if (userId && movedTasks.length) persist(db.upsertTasks(movedTasks, userId));
+      movedTasks.forEach((t) => persist(db.updateTaskRow(t.id, { columnId: fallback.id })));
     },
-    [apply, persist, userId]
+    [apply, persist]
   );
 
   // ---------------- Tasks ----------------
@@ -1039,11 +1039,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         )
         .sort((a, b) => a.order - b.order);
 
-      const updatedMoving = { ...moving, columnId: toColumnId };
-      destTasks.splice(toIndex, 0, updatedMoving);
-
+      // Позиция — дробная, между соседями. Так меняется ОДНА строка в базе, а не
+      // вся колонка: раньше перенос переписывал соседние карточки целиком из
+      // нашей (возможно устаревшей) памяти и затирал чужие правки.
+      const idx = Math.max(0, Math.min(toIndex, destTasks.length));
+      const prev = destTasks[idx - 1]?.order;
+      const next = destTasks[idx]?.order;
       const newOrder = new Map<string, number>();
-      destTasks.forEach((t, i) => newOrder.set(t.id, i));
+      let pos: number;
+      if (prev === undefined && next === undefined) pos = 1000;
+      else if (prev === undefined) pos = next! - 1000;
+      else if (next === undefined) pos = prev + 1000;
+      else pos = (prev + next) / 2;
+      if (prev !== undefined && next !== undefined && next - prev < 1e-6) {
+        // соседи слиплись — раздвигаем всю колонку (редко)
+        const all = [...destTasks];
+        all.splice(idx, 0, moving);
+        all.forEach((t, i) => newOrder.set(t.id, (i + 1) * 1000));
+        pos = newOrder.get(taskId)!;
+      }
+      newOrder.set(taskId, pos);
+
+      const updatedMoving = { ...moving, columnId: toColumnId };
 
       // workflow transitions based on destination column role
       const board = d.boards.find((b) => b.id === moving.boardId);
@@ -1130,8 +1147,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       apply({ ...d, tasks, journal });
 
       if (userId) {
-        const affected = tasks.filter((t) => newOrder.has(t.id));
-        persist(db.upsertTasks(affected, userId));
+        // только изменившиеся поля переносимой карточки; соседи — лишь если раздвигали
+        persist(db.updateTaskRow(taskId, { ...statusPatch, columnId: toColumnId, order: newOrder.get(taskId)! }));
+        newOrder.forEach((order, id) => {
+          if (id !== taskId) persist(db.updateTaskRow(id, { order }));
+        });
         if (removeDoneFor) persist(db.deleteJournalByTask(removeDoneFor));
         if (removeReadyFor) persist(db.deleteJournalByTask(removeReadyFor));
       }
@@ -1192,12 +1212,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const journal = d.journal.filter((j) => !(j.taskId && familyIds.has(j.taskId)));
       apply({ ...d, tasks, journal });
 
-      if (userId) {
-        persist(db.upsertTasks(patched, userId));
-        familyIds.forEach((id) => persist(db.deleteJournalByTask(id)));
-      }
+      patched.forEach((t) =>
+        persist(
+          db.updateTaskRow(t.id, {
+            boardId: t.boardId,
+            columnId: t.columnId,
+            order: t.order,
+            stageEnteredAt: t.stageEnteredAt,
+            stageTimes: t.stageTimes,
+            status: t.status,
+            completedAt: t.completedAt,
+            testedAt: t.testedAt,
+            readyAt: t.readyAt,
+            parentId: t.parentId,
+          }),
+        ),
+      );
+      familyIds.forEach((id) => persist(db.deleteJournalByTask(id)));
     },
-    [apply, persist, userId]
+    [apply, persist]
   );
 
   const toggleDone = useCallback(
@@ -1339,9 +1372,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         tasks,
       });
       persist(db.updateMemberRow(id, patch));
-      if (userId && renamedTasks.length) persist(db.upsertTasks(renamedTasks, userId));
+      renamedTasks.forEach((t) => persist(db.updateTaskRow(t.id, { assignee: t.assignee })));
     },
-    [apply, persist, userId]
+    [apply, persist]
   );
 
   const deleteMember = useCallback(

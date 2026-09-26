@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Trash2,
@@ -136,6 +136,10 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
   const fieldsDisabled = editing ? !canEdit : !canCreate;
   const canSave = editing ? canEdit : canCreate;
 
+  // Снимок карточки на момент заполнения формы. При сохранении пишем только
+  // поля, которые пользователь изменил относительно снимка — остальное не
+  // трогаем, чтобы не затереть то, что параллельно поменял коллега.
+  const baseline = useRef<Task | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -285,6 +289,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
   useEffect(() => {
     if (!open) return;
     if (task) {
+      baseline.current = task;
       setTitle(task.title);
       setDesc(task.desc);
       setAssignee(task.assignee);
@@ -303,6 +308,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
       setWatchers(task.watchers ?? []);
       setCustom(task.custom ?? {});
     } else {
+      baseline.current = null;
       setTitle("");
       setDesc("");
       setAssignee("");
@@ -344,7 +350,7 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
     };
     const points = storyPoints.trim() === "" ? null : Math.max(0, parseInt(storyPoints, 10) || 0);
     if (editing && task) {
-      updateTask(task.id, {
+      const next: Partial<Omit<Task, "id">> = {
         title: title.trim(),
         desc,
         assignee: who,
@@ -361,7 +367,33 @@ export function TaskModal({ open, onClose, board, task, defaultColumnId, viewOnl
         sprint: sprint.trim(),
         watchers,
         custom,
-      });
+      };
+      const b = baseline.current ?? task;
+      const was: Partial<Omit<Task, "id">> = {
+        title: b.title,
+        desc: b.desc,
+        assignee: b.assignee,
+        priority: b.priority,
+        type: b.type ?? "task",
+        dueDate: b.dueDate ?? null,
+        doneDueDate: b.doneDueDate ?? null,
+        tags: b.tags,
+        columnId: b.columnId,
+        mapId: b.mapId ?? null,
+        mapNodeId: b.mapNodeId ?? null,
+        storyPoints: b.storyPoints ?? null,
+        epic: b.epic ?? "",
+        sprint: b.sprint ?? "",
+        watchers: b.watchers ?? [],
+        custom: b.custom ?? {},
+      };
+      const patch: Partial<Omit<Task, "id">> = {};
+      for (const k of Object.keys(next) as (keyof typeof next)[]) {
+        if (JSON.stringify(next[k] ?? null) !== JSON.stringify(was[k] ?? null)) {
+          (patch as Record<string, unknown>)[k] = next[k];
+        }
+      }
+      if (Object.keys(patch).length) updateTask(task.id, patch);
       notifyAssign(task.id);
     } else {
       const created = createTask({
