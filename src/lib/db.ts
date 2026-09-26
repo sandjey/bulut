@@ -219,17 +219,41 @@ const isMissingColumn = (e: { code?: string; message?: string } | null): boolean
   !!e && (e.code === "42703" || e.code === "PGRST204" || /photo_count/i.test(e.message ?? ""));
 
 /** Задачи комнаты без колонки photos. Сам откатывается, если миграции ещё нет. */
+/**
+ * Supabase (PostgREST) отдаёт не больше 1000 строк за запрос.
+ * Комната «sarbon» уже перешагнула этот порог по комментариям — всё, что после
+ * первой тысячи, просто не доезжало до интерфейса. Гоняем запрос страницами,
+ * пока не получим короткую страницу.
+ */
+const PAGE = 1000;
+type PageError = { code?: string; message?: string } | null;
+async function fetchAllPages<T>(
+  build: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown; error: PageError }> },
+): Promise<{ data: T[] | null; error: PageError }> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await build().range(from, from + PAGE - 1);
+    if (res.error) return { data: null, error: res.error };
+    const rows = (res.data as T[] | null) ?? [];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return { data: all, error: null };
+}
+
 async function selectTasksSlim(ws: string, orderBy: "position" | "created_at") {
   const ascending = orderBy === "position";
   const run = (cols: string) =>
-    client().from("tasks").select(cols).eq("workspace_id", ws).order(orderBy, { ascending });
+    fetchAllPages<TaskRow>(() =>
+      client().from("tasks").select(cols).eq("workspace_id", ws).order(orderBy, { ascending }),
+    );
 
   let res = await run(taskColumns());
   if (res.error && hasPhotoCount && isMissingColumn(res.error)) {
     hasPhotoCount = false; // миграция ещё не применена — пробуем без photo_count
     res = await run(taskColumns());
   }
-  return { data: res.data as unknown as TaskRow[] | null, error: res.error };
+  return { data: res.data, error: res.error };
 }
 
 /**
@@ -271,10 +295,21 @@ export async function fetchAll(userId: string): Promise<AppData> {
   if (!activeWs) return { boards: [], tasks: [], journal: [], comments: [], members: [] };
   const ws = activeWs;
   const [boardsRes, tasksRes, journalRes, commentsRes] = await Promise.all([
-    c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
+    fetchAllPages<BoardRow>(() =>
+      c.from("boards").select("*").eq("workspace_id", ws).order("position", { ascending: true }),
+    ),
     selectTasksSlim(ws, "position"),
-    c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
-    c.from("task_comments").select("*").eq("workspace_id", ws).order("created_at", { ascending: true }),
+    fetchAllPages<JournalRow>(() =>
+      c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
+    ),
+    fetchAllPages<CommentRow>(() =>
+      c
+        .from("task_comments")
+        .select("*")
+        .eq("workspace_id", ws)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
+    ),
   ]);
   if (boardsRes.error) throw boardsRes.error;
   if (tasksRes.error) throw tasksRes.error;
@@ -302,9 +337,13 @@ export async function fetchTrash(): Promise<import("./types").TrashData> {
   if (!activeWs) return { boards: [], tasks: [], journal: [] };
   const ws = activeWs;
   const [boardsRes, tasksRes, journalRes] = await Promise.all([
-    c.from("boards").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+    fetchAllPages<BoardRow>(() =>
+      c.from("boards").select("*").eq("workspace_id", ws).order("created_at", { ascending: false }),
+    ),
     selectTasksSlim(ws, "created_at"),
-    c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
+    fetchAllPages<JournalRow>(() =>
+      c.from("journal").select("*").eq("workspace_id", ws).order("date", { ascending: false }),
+    ),
   ]);
   // если колонки deleted_at ещё нет — вернём пустую корзину, а не упадём
   if (boardsRes.error || tasksRes.error || journalRes.error) {
