@@ -40,9 +40,11 @@ export async function GET(req: NextRequest) {
     : "position";
   const ascending = (q.get("order") ?? "asc") !== "desc";
 
+  // Без колонки photos: там base64 (в sarbon — 41 МБ на комнату). select("*")
+  // тянул их с Supabase на каждый вызов и съедал месячную квоту egress.
   let query = db
     .from("tasks")
-    .select("*", { count: "exact" })
+    .select(TASK_COLUMNS, { count: "exact" })
     .eq("workspace_id", ws.workspaceId)
     .is("deleted_at", null);
 
@@ -209,6 +211,9 @@ export async function POST(req: NextRequest) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const TASK_COLUMNS =
+  "id,user_id,workspace_id,board_id,column_id,title,description,assignee,priority,type,due_date,done_due_date,tags,status,position,created_at,updated_at,created_by,ready_at,tested_at,completed_at,stage_entered_at,return_count,returns,stage_times,checklist,attachments,photo_count,map_id,map_node_id,parent_id,blocked_by,story_points,epic,sprint,watchers,custom,deleted_at";
 
 function toTaskResponse(row: Record<string, unknown>) {
   return {

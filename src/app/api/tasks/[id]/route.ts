@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { authenticate, err, ok } from "@/lib/api-auth";
 
+const TASK_COLUMNS =
+  "id,user_id,workspace_id,board_id,column_id,title,description,assignee,priority,type,due_date,done_due_date,tags,status,position,created_at,updated_at,created_by,ready_at,tested_at,completed_at,stage_entered_at,return_count,returns,stage_times,checklist,attachments,photo_count,map_id,map_node_id,parent_id,blocked_by,story_points,epic,sprint,watchers,custom,deleted_at";
+
 // ─── GET /api/tasks/:id ───────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -10,7 +13,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const { data, error } = await db
     .from("tasks")
-    .select("*, task_comments(*)")
+    // без photos (base64) — см. TASK_COLUMNS в ../route.ts
+    .select(`${TASK_COLUMNS}, task_comments(*)`)
     .eq("id", params.id)
     .single();
 
